@@ -1533,7 +1533,7 @@ export default function App() {
                                 ✕
                               </button>
                             )}
-                          
+                          </div>
 
                           {/* Manual Quick selector popup (critical for mobile/tablet where drag/drop fails) */}
                           {activeSlotSelector === idx && (
@@ -1855,67 +1855,12 @@ export default function App() {
           <div className="glass-panel p-6 flex flex-col h-[700px] animate-[fadeIn_0.3s_ease-out]">
             <div className="flex items-center justify-between border-b border-white/10 pb-4 mb-4">
               <div>
-                <h2 className="text-xl font-bold text-slate-100 font-heading">Team Chat & Schedule</h2>
-                <p className="text-xs text-slate-400">Real-time team synchronization logs & 7-day rolling planner.</p>
+                <h2 className="text-xl font-bold text-slate-100 font-heading">Team Chat</h2>
+                <p className="text-xs text-slate-400">Real-time team synchronization logs.</p>
               </div>
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 bg-emerald-500 rounded-full animate-ping"></span>
                 <span className="text-xs text-slate-400">{dbStatus}</span>
-              </div>
-            </div>
-
-            {/* Rolling Calendar */}
-            <div className="mb-4 bg-slate-950/40 p-3 rounded-xl border border-white/5">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">7-Day Team Schedule (Rolling)</h3>
-                <button onClick={() => setShowCalEventModal(true)} className="text-[10px] bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-2 py-1 rounded">
-                  Add Event
-                </button>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-7 gap-2">
-                {calendarDays.map((day, idx) => {
-                  const dayStr = day.toDateString();
-                  const dayEvents = calendarEvents.filter(e => new Date(e.date).toDateString() === dayStr);
-                  const dayGames = games.filter(g => new Date(g.game_date).toDateString() === dayStr);
-                  
-                  const allEvents = [...dayEvents];
-                  dayGames.forEach(dg => {
-                    allEvents.push({ type: 'game', title: `vs ${dg.opponent}`, location: dg.location });
-                  });
-
-                  const isToday = idx === 0;
-
-                  return (
-                    <div 
-                      key={idx}
-                      onClick={() => {
-                        const localISOTime = new Date(day.getTime() - (day.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
-                        setCalEventDate(localISOTime);
-                        setShowCalEventModal(true);
-                      }}
-                      className={`flex flex-col items-center justify-between p-2 rounded-lg border transition-all cursor-pointer ${isToday ? 'bg-indigo-950/60 border-indigo-500' : 'bg-slate-900/50 border-white/5 hover:border-white/10'}`}
-                    >
-                      <div className="text-center">
-                        <span className="block text-[10px] text-slate-400 font-bold uppercase">{weekdays[day.getDay()]}</span>
-                        <span className="block text-sm font-extrabold">{day.getDate()}</span>
-                      </div>
-                      <div className="w-full space-y-1 mt-1 flex flex-col items-center">
-                        {allEvents.length > 0 ? (
-                          allEvents.map((e, i) => {
-                            const isGame = e.type === 'game';
-                            return (
-                              <div key={i} className={`text-[9px] font-bold text-center px-1 py-0.5 rounded leading-tight w-full truncate ${isGame ? 'bg-emerald-500/20 text-emerald-400' : 'bg-indigo-500/20 text-indigo-300'}`}>
-                                {isGame ? '⚽' : '🏃'} {e.title}
-                              </div>
-                            );
-                          })
-                        ) : (
-                          <span className="text-[9px] text-slate-500 italic">No events</span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
               </div>
             </div>
 
