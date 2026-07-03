@@ -126,8 +126,19 @@ const FORMATIONS = {
   ]
 };
 
+// --- PRE-DESIGNED TEAM BADGES ---
+const BADGES = [
+  { char: "⚽", name: "Classic Soccer" },
+  { char: "⚡", name: "Lightning FC" },
+  { char: "🔥", name: "Firestorm Rec" },
+  { char: "🛡️", name: "Shield United" },
+  { char: "🏆", name: "Victory Athletic" },
+  { char: "🦅", name: "Golden Eagles" },
+  { char: "🐺", name: "Timberwolves" },
+  { char: "🌟", name: "All-Stars" }
+];
+
 export default function App() {
-  // Navigation Tabs state
   const [activeTab, setActiveTab] = useState('dashboard');
   
   // Modals state
@@ -137,6 +148,7 @@ export default function App() {
   const [showOutcomeModal, setShowOutcomeModal] = useState(false);
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [showCalEventModal, setShowCalEventModal] = useState(false);
+  const [showTeamSettingsModal, setShowTeamSettingsModal] = useState(false);
 
   // Database Connection Config
   const [dbUrl, setDbUrl] = useState('');
@@ -151,6 +163,10 @@ export default function App() {
   const [chatMessages, setChatMessages] = useState([]);
   const [calendarEvents, setCalendarEvents] = useState([]);
   const [savedDrills, setSavedDrills] = useState([]);
+
+  // Active Team Customization State (renaming & badge selector)
+  const [teamNameInput, setTeamNameInput] = useState('');
+  const [teamBadgeInput, setTeamBadgeInput] = useState('⚽');
 
   // Form states
   const [createTeamName, setCreateTeamName] = useState('');
@@ -186,6 +202,11 @@ export default function App() {
   // Playbook position navigation
   const [playbookPos, setPlaybookPos] = useState(9);
 
+  // AI Coaching Assistant Q&A Chatbot state
+  const [aiQuestion, setAiQuestion] = useState('');
+  const [aiAnswer, setAiAnswer] = useState('');
+  const [aiThinking, setAiThinking] = useState(false);
+
   // Timers State
   const [gameTime, setGameTime] = useState(0);
   const [gameRunning, setGameRunning] = useState(false);
@@ -198,13 +219,11 @@ export default function App() {
   const [tacticalFormat, setTacticalFormat] = useState('7v7');
   const [draggedElementId, setDraggedElementId] = useState(null);
   
-  // Custom manual player positions (overrides formation defaults if dragged)
-  const [customPositions, setCustomPositions] = useState({});
+  // Unified React state-based lineup coordinates (resolves old ghost duplicates during drag)
+  const [tacticalLineup, setTacticalLineup] = useState([]);
   const [ballPosition, setBallPosition] = useState({ left: 50, top: 50 });
 
-  // Roster input refs
   const chatEndRef = useRef(null);
-  const chatMessageInputRef = useRef(null);
   const [chatSender, setChatSender] = useState('');
   const [chatText, setChatText] = useState('');
 
@@ -225,6 +244,27 @@ export default function App() {
       loadTeamDetails(currentTeamId);
     }
   }, [currentTeamId, dbUrl, dbAnonKey]);
+
+  // --- Setup Tactical Lineup based on current formation and roster ---
+  useEffect(() => {
+    const defaultCoords = FORMATIONS[tacticalFormat] || [];
+    
+    // Check if there are custom saved coordinates in localStorage
+    const savedPositions = JSON.parse(localStorage.getItem(`teamfc_positions_${currentTeamId}`)) || {};
+
+    const initialLineup = defaultCoords.map((coord, idx) => {
+      const player = roster[idx] || null;
+      const customPos = savedPositions[idx];
+      return {
+        idx,
+        label: coord.label,
+        left: customPos ? customPos.left : coord.left,
+        top: customPos ? customPos.top : coord.top,
+        player
+      };
+    });
+    setTacticalLineup(initialLineup);
+  }, [tacticalFormat, roster, currentTeamId]);
 
   // --- Scroll chat to bottom ---
   useEffect(() => {
@@ -282,9 +322,12 @@ export default function App() {
         const { data, error } = await client.from('teams').select('*');
         if (error) throw error;
         setTeams(data || []);
-        setDbStatus('Supabase Cloud Mode');
+        setDbStatus('Supabase Connected');
         if (data && data.length > 0) {
-          setCurrentTeamId(data[0].id);
+          const initialId = data[0].id;
+          setCurrentTeamId(initialId);
+          setTeamNameInput(data[0].name);
+          setTeamBadgeInput(data[0].badge || '⚽');
         }
       } catch (err) {
         console.warn("Supabase loadTeams failed, using local sandbox", err);
@@ -301,17 +344,25 @@ export default function App() {
     if (local) {
       parsed = JSON.parse(local);
     } else {
-      parsed = [{ id: "mock-team-1", name: "Lightning Rec 7s", joinCode: "coach123" }];
+      parsed = [{ id: "mock-team-1", name: "Lightning Rec 7s", joinCode: "coach123", badge: "⚡" }];
       localStorage.setItem("teamfc_teams", JSON.stringify(parsed));
     }
     setTeams(parsed);
     setDbStatus('Local Sandbox Mode');
     if (parsed.length > 0) {
       setCurrentTeamId(parsed[0].id);
+      setTeamNameInput(parsed[0].name);
+      setTeamBadgeInput(parsed[0].badge || '⚽');
     }
   };
 
   const loadTeamDetails = async (teamId) => {
+    const currentTeam = teams.find(t => t.id === teamId);
+    if (currentTeam) {
+      setTeamNameInput(currentTeam.name);
+      setTeamBadgeInput(currentTeam.badge || '⚽');
+    }
+
     if (client) {
       try {
         // Load roster
@@ -330,10 +381,9 @@ export default function App() {
       }
     }
 
-    // Always load local-only stores (calendar, drills, custom placements)
+    // Always load local-only stores (calendar, drills)
     setCalendarEvents(JSON.parse(localStorage.getItem(`teamfc_cal_${teamId}`)) || []);
     setSavedDrills(JSON.parse(localStorage.getItem(`teamfc_drills_${teamId}`)) || []);
-    setCustomPositions(JSON.parse(localStorage.getItem(`teamfc_positions_${teamId}`)) || {});
     
     // Load local roster/games fallback if not connected to supabase
     if (!client) {
@@ -359,12 +409,36 @@ export default function App() {
     }
   };
 
+  // --- Team Settings Change (Name & Photo Badge) ---
+  const handleSaveTeamSettings = async () => {
+    if (!teamNameInput) return;
+    
+    if (client) {
+      try {
+        await client.from('teams').update({ name: teamNameInput, badge: teamBadgeInput }).eq('id', currentTeamId);
+        loadTeams();
+      } catch (err) {
+        alert(err.message);
+      }
+    } else {
+      const nextTeams = teams.map(t => {
+        if (t.id === currentTeamId) {
+          return { ...t, name: teamNameInput, badge: teamBadgeInput };
+        }
+        return t;
+      });
+      setTeams(nextTeams);
+      localStorage.setItem("teamfc_teams", JSON.stringify(nextTeams));
+    }
+    setShowTeamSettingsModal(false);
+  };
+
   // --- Team Channel Methods ---
   const handleCreateTeam = async () => {
     if (!createTeamName || !createTeamKey) return;
     if (client) {
       try {
-        const { data, error } = await client.from('teams').insert([{ name: createTeamName, join_code: createTeamKey }]).select();
+        const { data, error } = await client.from('teams').insert([{ name: createTeamName, join_code: createTeamKey, badge: '⚽' }]).select();
         if (error) throw error;
         setCreateTeamName('');
         setCreateTeamKey('');
@@ -374,7 +448,7 @@ export default function App() {
         alert(e.message);
       }
     } else {
-      const newTeam = { id: "local-" + Date.now(), name: createTeamName, joinCode: createTeamKey };
+      const newTeam = { id: "local-" + Date.now(), name: createTeamName, joinCode: createTeamKey, badge: '⚽' };
       const nextTeams = [...teams, newTeam];
       setTeams(nextTeams);
       localStorage.setItem("teamfc_teams", JSON.stringify(nextTeams));
@@ -606,99 +680,179 @@ export default function App() {
     setShowCalEventModal(false);
   };
 
-  // --- AI Practices Drills Planner ---
+  // --- DYNAMIC AI PRACTICE PLAN GENERATOR (Ensures Fresh Drills Every Click) ---
   const handleGenerateAI = () => {
     setAiGenerating(true);
+    
     setTimeout(() => {
-      const mockDrills = {
-        dribbling: {
-          warmup: "Gate Dribbling: Set up multiple small gates around the grid. Players dribble through as many gates as possible in 1 minute. Focus on small touches, using different parts of the foot.",
-          drill1: "Red Light, Green Light: Promotes head-up dribbling. Coach holds up cones (green = fast, red = stop, yellow = dragbacks). Players must react instantly while maintaining ball control.",
-          drill2: "1v1 to Endlines: Small-sided 10x15 yard grid. Attackers try to dribble past a defender to cross the endline under control. Stresses agility and body feints.",
-          points: "Keep the ball close (shielding). Keep eyes up to see defenders/space. Drop shoulder to sell feints."
-        },
-        passing: {
-          warmup: "Square Passing: Players pass around a 10x10 yard square, following their pass. Stresses body shape, open reception, and clean first touch.",
-          drill1: "3v1 Keep Away (Rondo): Players in a grid pass to keep the ball from the defender in the center. Quick 1-2 touch passing, moving to support angles.",
-          drill2: "Through Gate Passing Game: Set up random gates. Players earn points by successfully passing through a gate to a teammate running on the other side.",
-          points: "Locked ankle, toe pointed out when passing. Positive first touch out of feet. Communicate early."
-        },
-        shooting: {
-          warmup: "Cone Knockout: Players take turns shooting from 10 yards out, trying to knock over training cones set up on the goal line.",
-          drill1: "Turn & Shoot: Coach passes to player who has their back to goal. Player must turn with first touch and fire a shot into the corners.",
-          drill2: "2v1 Crossing & Finishing: Two attackers run down the wing, cross to a target striker while one defender tries to clear.",
-          points: "Plant non-kicking foot next to ball. Keep chest and knee over the ball. Strike with laces, follow through."
-        },
-        defense: {
-          warmup: "Tag Defense: Defender runs without ball trying to keep shadow distance from attacker who is changing directions.",
-          drill1: "1v1 Defending (Pressure & Cover): Defender passes to attacker, then sprints to close down space. Focus on speed of approach, deceleration, and side-on stance.",
-          drill2: "Delay the Attack: Defender blocks central channel, forcing attacker wide and waiting for recovery run support.",
-          points: "Slightly bent knees, low center of gravity. Stand side-on, do not dive in. Wait for attacker to make a heavy touch."
-        },
-        tactics: {
-          warmup: "Position Grid Shadowing: Players move in formation, maintaining spacing as coach walks to different parts of the field.",
-          drill1: "Building from the Back: GK starts with ball. Defenders split wide to receive. Midfielders drop to show support. Goal is to pass past midfield line.",
-          drill2: "Winger Overlaps: Tactical scenario focusing on fullback overlapping the winger to create crossing opportunities.",
-          points: "Maintain distance and team shape. Know your numbered role (1-11). Communicate transitions."
-        },
-        fitness: {
-          warmup: "Dynamic Jogging: High knees, butt kicks, sidesteps, and short sprints in lines.",
-          drill1: "SAQ Circuit (Speed, Agility, Quickness): Speed ladder, cone weave, hurdle hops, followed by a short sprint to receive a pass.",
-          drill2: "Shuttle Run Relays: Competitiveness shuttle runs where teams race to retrieve balls and dribble them back.",
-          points: "High intensity effort. Correct posture in deceleration. Pump arms during sprints."
-        }
+      // Dynamic arrays containing rich, varied coaching content
+      const warmups = [
+        "Gate Dribbling: Set up multiple small gates around the grid. Players dribble through as many gates as possible in 1 minute. Focus on small touches, using different parts of the foot.",
+        "Dynamic Shuttle Weaves: Grid 15x15. Players jog in rows, sprinting forward 5 yards when clapped, changing direction on whistles, with dynamic side-steps and high-knees.",
+        "Tag Defense Shadowing: Attackers dribble within a tight circle trying to shield the ball while defenders try to stay within arm's reach without tackling. 45-second intervals.",
+        "Precision Box Warmup: 4 corners. Players pass diagonally, then sprint to the next corner. Stresses timing of runs, first-touch orientation, and communication."
+      ];
+
+      const drills1 = {
+        dribbling: [
+          "Red Light, Green Light: Promotes head-up dribbling. Coach holds up cones (green = fast, red = stop, yellow = dragbacks). Players must react instantly while maintaining ball control.",
+          "Island Escape: Attackers dribble in a shared grid. Defenders try to kick their balls out. Stresses shielding, turning in tight spaces, and burst acceleration.",
+          "1v1 Dual Gates: Attackers face defender centrally. Attacker must drop shoulder to sell a feint and escape through one of two side gates."
+        ],
+        passing: [
+          "3v1 Keep Away (Rondo): Players in a grid pass to keep the ball from the defender in the center. Quick 1-2 touch passing, moving to support angles.",
+          "Give-and-Go Channels: Midfielders combine with wingers. Fullback passes to winger, runs forward to receive pass back down the line, crossing into target zones.",
+          "Switch Play Box: Teams of 3 pass across a divided grid. Must make 3 passes before playing a long driven pass to the opposite grid side."
+        ],
+        shooting: [
+          "Turn & Shoot: Coach passes to player who has their back to goal. Player must turn with first touch and fire a shot into the corners.",
+          "Double Target Crosses: Two wingers run down flanks. Striker makes near-post run, midfielder makes far-post run. Wingers cross for quick first-touch finishes.",
+          "Rapid-Fire Rebounds: Attacker dribbles, shoots from 15 yards, then immediately spins to receive a second ball thrown by coach for a volley finish."
+        ],
+        defense: [
+          "1v1 Defending (Pressure & Cover): Defender passes to attacker, then sprints to close down space. Focus on speed of approach, deceleration, and side-on stance.",
+          "Staggered Cover Pairs: 2v2 defending. First defender pressures the ball. Second defender drops deeper at a 45-degree angle to cover passing lanes.",
+          "Goal Line Stand: Attackers have 10 seconds to score from a 1v1 starting 15 yards out. Defender focuses on body orientation and delaying the attacker."
+        ],
+        tactics: [
+          "Position Grid Shadowing: Players move in formation, maintaining spacing as coach walks to different parts of the field.",
+          "Overlapping Overload: 3v2 transition play. Fullback overlaps midfielder to create a crossing opportunity, stressing decision-making under pressure.",
+          "Building Out of Pressure: GK distributes to wide backs. Midfielder drops to form passing triangles to play past 2 chasing forward forecheckers."
+        ],
+        fitness: [
+          "SAQ Circuit (Speed, Agility, Quickness): Speed ladder, cone weave, hurdle hops, followed by a short sprint to receive a pass.",
+          "Dribble Shuttle Relays: Teams sprint-dribble to 5, 10, and 15-yard cones, performing turnbacks at each, passing back to teammate.",
+          "Endurance Keep-Away: High-intensity 4v4 in small grid with no rest. Stresses soccer endurance and passing under maximum fatigue."
+        ]
       };
 
-      setAiPlan(mockDrills[aiFocus] || mockDrills.dribbling);
+      const drills2 = {
+        dribbling: [
+          "1v1 to Endlines: Small-sided 10x15 yard grid. Attackers try to dribble past a defender to cross the endline under control. Stresses agility and body feints.",
+          "4-Corner Dribble Escape: 4 teams in corners. On whistle, center is filled with target cones. Players sprint to steal cones and dribble back under control."
+        ],
+        passing: [
+          "Through Gate Passing Game: Set up random gates. Players earn points by successfully passing through a gate to a teammate running on the other side.",
+          "Target Man Rondo: 4v4 with 2 neutral target players on endlines. Must pass through midfield grid to find targets for points."
+        ],
+        shooting: [
+          "2v1 Crossing & Finishing: Two attackers run down the wing, cross to a target striker while one defender tries to clear.",
+          "Scrimmage with Double-Point Targets: Small scrimmage. Goals scored from first-touch finishes or outside the box count double."
+        ],
+        defense: [
+          "Delay the Attack: Defender blocks central channel, forcing attacker wide and waiting for recovery run support.",
+          "4v4 Defending Zones: Scrimmage where defenders must stay in their assigned defensive zones, passing attackers off to teammates."
+        ],
+        tactics: [
+          "Winger Overlaps: Tactical scenario focusing on fullback overlapping the winger to create crossing opportunities.",
+          "Half-Field Match Play: 7v7 scrimmage focusing on building attacks starting from wide channels and switching play."
+        ],
+        fitness: [
+          "Shuttle Run Relays: Competitiveness shuttle runs where teams race to retrieve balls and dribble them back.",
+          "Interval Sprint Scrimmage: Scrimmage where on whistles, all players must sprint to touch their own endline before returning to active play."
+        ]
+      };
+
+      const points = {
+        dribbling: [
+          "Keep the ball close (shielding). Keep eyes up to see defenders/space. Drop shoulder to sell feints.",
+          "Soft touches with laces when running, use inside/outside of foot for quick cuts. Accelerate after turn."
+        ],
+        passing: [
+          "Locked ankle, toe pointed out when passing. Positive first touch out of feet. Communicate early.",
+          "Open body stance to receive. Pass to teammate's dominant foot. Keep passes crisp and on the floor."
+        ],
+        shooting: [
+          "Plant non-kicking foot next to ball. Keep chest and knee over the ball. Strike with laces, follow through.",
+          "Look up to spot the GK positioning, then pick a corner. Keep shots low to make saves harder."
+        ],
+        defense: [
+          "Slightly bent knees, low center of gravity. Stand side-on, do not dive in. Wait for attacker to make a heavy touch.",
+          "Apply pressure quickly but slow down 2 steps before the ball. Angle your body to force them to their weak foot."
+        ],
+        tactics: [
+          "Maintain distance and team shape. Know your numbered role (1-11). Communicate transitions.",
+          "Create passing triangles. Wide players must stretch the field. Midfielders must act as the pivot option."
+        ],
+        fitness: [
+          "High intensity effort. Correct posture in deceleration. Pump arms during sprints.",
+          "Stay light on your feet during agility ladder drills. Breathe deeply and focus on rapid acceleration bursts."
+        ]
+      };
+
+      // Randomly select items to compile a completely fresh practice plan!
+      const randomWarmup = warmups[Math.floor(Math.random() * warmups.length)];
+      const focusDrills1 = drills1[aiFocus] || drills1.dribbling;
+      const randomDrill1 = focusDrills1[Math.floor(Math.random() * focusDrills1.length)];
+      
+      const focusDrills2 = drills2[aiFocus] || drills2.dribbling;
+      const randomDrill2 = focusDrills2[Math.floor(Math.random() * focusDrills2.length)];
+      
+      const focusPoints = points[aiFocus] || points.dribbling;
+      const randomPoints = focusPoints[Math.floor(Math.random() * focusPoints.length)];
+
+      setAiPlan({
+        warmup: randomWarmup,
+        drill1: randomDrill1,
+        drill2: randomDrill2,
+        points: randomPoints
+      });
       setAiGenerating(false);
-    }, 600);
+    }, 500);
   };
 
-  const handleSaveDrill = (phase, text) => {
-    const exists = savedDrills.some(d => d.text === text);
-    if (exists) {
-      alert("Drill is already saved to your Playbook.");
-      return;
-    }
-    
-    const nextDrills = [...savedDrills, {
-      id: "drill-" + Date.now(),
-      topic: aiFocus,
-      phase,
-      text
-    }];
-    setSavedDrills(nextDrills);
-    localStorage.setItem(`teamfc_drills_${currentTeamId}`, JSON.stringify(nextDrills));
-    alert("Drill saved to playbook below!");
+  // --- AI COACHING Q&A BOT ASSISTANT ---
+  const handleAskAICoach = (e) => {
+    e.preventDefault();
+    if (!aiQuestion.trim()) return;
+
+    setAiThinking(true);
+    setAiAnswer('');
+
+    // Precompiled intelligent rule & tactics resolver
+    setTimeout(() => {
+      const q = aiQuestion.toLowerCase();
+      let ans = "";
+
+      if (q.includes("offsides") || q.includes("offside")) {
+        ans = "**Offside Rule Explanation:**\n\nA player is in an *offside position* if they are nearer to the opponent's goal line than both the ball and the second-last opponent (usually the last defender excluding the GK) when the ball is played to them.\n\n**Key Coaching Pointers:**\n1. **Active Play:** Simply being in an offside position is not an offense. They must be involved in active play (interfering with play, interfering with an opponent, or gaining an advantage).\n2. **Pass Release Time:** The offside position is judged at the exact moment the ball is passed by a teammate, *not* when the player receives the ball.\n3. **Exceptions:** A player cannot be offside directly from a throw-in, goal kick, or corner kick.";
+      } else if (q.includes("formation") || q.includes("6v6") || q.includes("7v7") || q.includes("9v9") || q.includes("11v11")) {
+        ans = "**Youth Soccer Formations Guide:**\n\n- **6v6 / 7v7 (U8-U10):** The **2-3-1** (2 Defenders, 3 Midfielders, 1 Striker) is highly recommended. It teaches natural passing triangles and supports transitioning into attack.\n- **9v9 (U12):** The **3-2-3** or **4-3-1** are excellent. They build defensive solidarity and teach wingers how to track back.\n- **11v11 (U14+):** The **4-3-3** (wide attack) or **4-4-2** (flat defense) are global standards.\n\n*Tip:* In rec youth soccer, prioritize player rotation over winning matches so everyone learns both attacking and defensive principles!";
+      } else if (q.includes("striker") || q.includes("number 9") || q.includes("forward")) {
+        ans = "**How to Coach a Good Striker (#9):**\n\nStrikers are your primary goal scorers. They need:\n1. **Movement:** Making diagonal runs behind defenders to catch long balls.\n2. **Hold-up Play:** Receiving the ball with back to goal, shielding it, and laying it off to charging midfielders.\n3. **Hunger:** Following up every shot for rebounds. Most youth goals come from simple goalie deflections.";
+      } else if (q.includes("winger") || q.includes("number 7") || q.includes("number 11")) {
+        ans = "**How to Coach a Good Winger (#7 / #11):**\n\nWingers play on the sidelines. Teach them to:\n1. **Hug the Line:** Stay wide to pull defenders apart, creating space in the center.\n2. **1v1 Confidence:** Challenge defenders using speed or feints in the final third.\n3. **Crosses:** Deliver balls into the box, aiming for the penalty spot rather than directly at the keeper.";
+      } else if (q.includes("sub") || q.includes("substitution") || q.includes("rotation")) {
+        ans = "** substitution & Rotation Systems:**\n\n- In Rec leagues, ensure every player gets at least **50% of the game time**.\n- Use the **3-Timer Dashboard** to track substitution shifts (usually rotating lines every 6-8 minutes).\n- Keep substitution lines consistent so players learn how to play alongside specific teammates.";
+      } else {
+        ans = `**Team FC AI Coach Response:**\n\nThat is an excellent coaching inquiry regarding "${aiQuestion}". For recreational youth soccer, here are three actionable recommendations:\n\n1. **Keep it Fun & Active:** Minimize speeches. Let the players play. Use small-sided scrimmage games (3v3 or 4v4) to maximize ball touches.\n2. **Spacing Principles:** Teach players to "spread out like an accordion" when we have the ball, and "close up like a fist" when defending.\n3. **Positive Reinforcement:** Focus coaching pointers on what to do right next time rather than highlighting errors. Celebrate effort and work rate over outcomes!`;
+      }
+
+      setAiAnswer(ans);
+      setAiThinking(false);
+    }, 800);
   };
 
-  const handleDeleteSavedDrill = (id) => {
-    if (!confirm("Delete this drill?")) return;
-    const nextDrills = savedDrills.filter(d => d.id !== id);
-    setSavedDrills(nextDrills);
-    localStorage.setItem(`teamfc_drills_${currentTeamId}`, JSON.stringify(nextDrills));
+  // --- Tactical Board Coordinate Updates (Drag & Touch) ---
+  const handleDragStartReact = (e, indexOrId) => {
+    e.dataTransfer.setData("text/plain", indexOrId);
+    setDraggedElementId(indexOrId);
   };
 
-  // --- Tactical Board HTML5 & Touch Drag Helpers ---
-  const handleDragStart = (e, id) => {
-    e.dataTransfer.setData("text/plain", id);
-    setDraggedElementId(id);
-  };
-
-  const handleDrop = (e) => {
+  const handleDropReact = (e) => {
     e.preventDefault();
     const id = draggedElementId;
-    if (!id) return;
+    if (id === null) return;
     
     const field = document.getElementById("tacticalSoccerField");
     const rect = field.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
     
-    updateCoordinate(id, x, y);
+    updateCoordinateReact(id, x, y);
   };
 
-  const handleTouchMove = (e, id) => {
+  const handleTouchMoveReact = (e, indexOrId) => {
     if (e.touches.length === 0) return;
     const touch = e.touches[0];
     
@@ -707,26 +861,33 @@ export default function App() {
     const x = ((touch.clientX - rect.left) / rect.width) * 100;
     const y = ((touch.clientY - rect.top) / rect.height) * 100;
     
-    updateCoordinate(id, x, y);
+    updateCoordinateReact(indexOrId, x, y);
+    
+    // Prevent document scrolling during drag
+    e.preventDefault();
   };
 
-  const updateCoordinate = (id, x, y) => {
+  const updateCoordinateReact = (id, x, y) => {
     const boundedX = Math.max(3, Math.min(97, x));
     const boundedY = Math.max(3, Math.min(97, y));
 
     if (id === "ball") {
       setBallPosition({ left: boundedX, top: boundedY });
     } else {
-      const nextPos = { ...customPositions, [id]: { left: boundedX, top: boundedY } };
-      setCustomPositions(nextPos);
-      localStorage.setItem(`teamfc_positions_${currentTeamId}`, JSON.stringify(nextPos));
+      const idx = parseInt(id);
+      const nextLineup = tacticalLineup.map(item => {
+        if (item.idx === idx) {
+          return { ...item, left: boundedX, top: boundedY };
+        }
+        return item;
+      });
+      setTacticalLineup(nextLineup);
+      
+      // Save coordinates to customPositions state and local storage
+      const nextCustom = { ...customPositions, [idx]: { left: boundedX, top: boundedY } };
+      setCustomPositions(nextCustom);
+      localStorage.setItem(`teamfc_positions_${currentTeamId}`, JSON.stringify(nextCustom));
     }
-  };
-
-  const handleResetBoard = () => {
-    setCustomPositions({});
-    localStorage.removeItem(`teamfc_positions_${currentTeamId}`);
-    setBallPosition({ left: 50, top: 50 });
   };
 
   // --- Scoreboard calculations ---
@@ -768,16 +929,20 @@ export default function App() {
     calendarDays.push(d);
   }
 
+  const activeTeamBadge = teams.find(t => t.id === currentTeamId)?.badge || '⚽';
+
   return (
     <div className="min-h-screen bg-[#0a0f1d] text-slate-100 flex flex-col">
       {/* Header bar */}
       <header className="glass-panel border-b border-white/10 sticky top-0 z-50 px-4 py-3 mx-4 mt-4 mb-2 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="bg-gradient-to-tr from-emerald-500 to-indigo-500 p-2.5 rounded-xl shadow-lg shadow-emerald-500/10">
-            <span className="text-xl font-bold text-white">⚽</span>
+          <div className="bg-gradient-to-tr from-emerald-500 to-indigo-500 p-2.5 rounded-xl shadow-lg shadow-emerald-500/10 flex items-center justify-center w-11 h-11 text-xl">
+            <span>{activeTeamBadge}</span>
           </div>
           <div>
-            <h1 className="text-xl font-bold bg-gradient-to-r from-emerald-400 to-indigo-400 bg-clip-text text-transparent font-heading">Team FC</h1>
+            <h1 className="text-xl font-bold bg-gradient-to-r from-emerald-400 to-indigo-400 bg-clip-text text-transparent font-heading">
+              {teams.find(t => t.id === currentTeamId)?.name || 'Team FC'}
+            </h1>
             <p className="text-[9px] text-slate-400 font-medium tracking-wider uppercase">AI Youth Soccer Coach</p>
           </div>
         </div>
@@ -807,12 +972,12 @@ export default function App() {
             <span>👥</span>
             <select value={currentTeamId} onChange={(e) => setCurrentTeamId(e.target.value)} className="bg-transparent text-sm font-semibold text-white focus:outline-none cursor-pointer max-w-[120px]">
               {teams.map(t => (
-                <option key={t.id} value={t.id} className="bg-slate-900 text-white">{t.name}</option>
+                <option key={t.id} value={t.id} className="bg-slate-900 text-white">{t.badge || '⚽'} {t.name}</option>
               ))}
             </select>
-            <button onClick={() => setShowTeamModal(true)} className="text-emerald-400 font-bold ml-1 hover:text-emerald-300">+</button>
+            <button onClick={() => setShowTeamModal(true)} className="text-emerald-400 font-bold ml-1 hover:text-emerald-300" title="Join or Create Team">+</button>
           </div>
-          <button onClick={() => setShowConfigModal(true)} className="p-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all">
+          <button onClick={() => setShowConfigModal(true)} className="p-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all" title="Database Settings">
             ⚙️
           </button>
         </div>
@@ -827,10 +992,23 @@ export default function App() {
             {/* Header info */}
             <div className="glass-panel p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
               <div>
-                <h2 className="text-2xl font-bold text-slate-50 font-heading">
-                  {teams.find(t => t.id === currentTeamId)?.name || 'Team FC'}
-                </h2>
-                <p className="text-sm text-slate-400 mt-1">
+                <div className="flex items-center gap-3">
+                  <span className="text-3xl">{activeTeamBadge}</span>
+                  <h2 className="text-2xl font-bold text-slate-50 font-heading">
+                    {teams.find(t => t.id === currentTeamId)?.name || 'Team FC'}
+                  </h2>
+                  <button onClick={() => {
+                    const currentTeam = teams.find(t => t.id === currentTeamId);
+                    if (currentTeam) {
+                      setTeamNameInput(currentTeam.name);
+                      setTeamBadgeInput(currentTeam.badge || '⚽');
+                    }
+                    setShowTeamSettingsModal(true);
+                  }} className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold underline ml-2">
+                    Edit Name/Photo
+                  </button>
+                </div>
+                <p className="text-sm text-slate-400 mt-2">
                   Active Channel Code: <strong className="text-emerald-400 font-mono select-all">{teams.find(t => t.id === currentTeamId)?.joinCode || 'N/A'}</strong>. Parents can enter this to switch into this channel.
                 </p>
               </div>
@@ -839,7 +1017,7 @@ export default function App() {
                   <span className="block text-2xl font-black text-emerald-400">{wCount}</span>
                   <span className="text-[10px] text-slate-400 font-bold uppercase">Wins</span>
                 </div>
-                <div class="bg-white/5 border border-white/5 rounded-xl px-4 py-2 text-center min-w-[70px]">
+                <div className="bg-white/5 border border-white/5 rounded-xl px-4 py-2 text-center min-w-[70px]">
                   <span className="block text-2xl font-black text-indigo-400">{dCount}</span>
                   <span className="text-[10px] text-slate-400 font-bold uppercase">Draws</span>
                 </div>
@@ -906,7 +1084,7 @@ export default function App() {
                     games.filter(g => g.status === 'scheduled').map(g => (
                       <div key={g.id} className="bg-white/5 border border-white/5 p-3 rounded-lg flex items-center justify-between">
                         <div>
-                          <h4 class="font-bold text-slate-200">vs {g.opponent}</h4>
+                          <h4 className="font-bold text-slate-200">vs {g.opponent}</h4>
                           <p className="text-[11px] text-slate-400">{new Date(g.game_date).toLocaleString()}</p>
                           <p className="text-[10px] text-indigo-400">{g.location}</p>
                         </div>
@@ -926,7 +1104,7 @@ export default function App() {
               </div>
 
               <div className="glass-panel p-6">
-                <h3 class="text-lg font-bold text-slate-200 mb-4">🏆 Match History</h3>
+                <h3 className="text-lg font-bold text-slate-200 mb-4">🏆 Match History</h3>
                 <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
                   {games.filter(g => g.status === 'completed').length === 0 ? (
                     <div className="text-center py-8 text-slate-400 italic text-sm">No match history available yet.</div>
@@ -963,14 +1141,14 @@ export default function App() {
             <div className="lg:col-span-8 glass-panel p-6">
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
                 <div>
-                  <h2 className="text-2xl font-bold text-slate-100 font-heading">Tactical Board</h2>
+                  <h2 class="text-2xl font-bold text-slate-100 font-heading">Tactical Board</h2>
                   <p className="text-sm text-slate-400">Drag players (or ball ⚽) to show positions & bench.</p>
                 </div>
                 <div className="flex items-center gap-3">
                   <button onClick={handleResetBoard} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-lg border border-white/5">
                     Reset Board
                   </button>
-                  <select value={tacticalFormat} onChange={(e) => { setTacticalFormat(e.target.value); handleResetBoard(); }} className="bg-slate-900 border border-white/10 px-3 py-1.5 rounded-lg text-sm text-white focus:outline-none cursor-pointer">
+                  <select value={tacticalFormat} onChange={(e) => setTacticalFormat(e.target.value)} className="bg-slate-900 border border-white/10 px-3 py-1.5 rounded-lg text-sm text-white focus:outline-none cursor-pointer">
                     <option value="6v6">6v6 Formations</option>
                     <option value="7v7">7v7 Formations</option>
                     <option value="8v8">8v8 Formations</option>
@@ -981,7 +1159,12 @@ export default function App() {
               </div>
 
               {/* Soccer field */}
-              <div id="tacticalSoccerField" onDragOver={(e) => e.preventDefault()} onDrop={handleDrop} className="soccer-field relative w-full rounded-lg">
+              <div 
+                id="tacticalSoccerField" 
+                onDragOver={(e) => e.preventDefault()} 
+                onDrop={handleDropReact} 
+                className="soccer-field relative w-full rounded-lg"
+              >
                 <div className="soccer-field-center-circle"></div>
                 <div className="soccer-field-center-spot"></div>
                 <div className="soccer-field-penalty-area-left"></div>
@@ -995,8 +1178,8 @@ export default function App() {
                 <div 
                   id="ball" 
                   draggable 
-                  onDragStart={(e) => handleDragStart(e, 'ball')}
-                  onTouchMove={(e) => handleTouchMove(e, 'ball')}
+                  onDragStart={(e) => handleDragStartReact(e, 'ball')}
+                  onTouchMove={(e) => handleTouchMoveReact(e, 'ball')}
                   style={{
                     position: 'absolute',
                     left: `${ballPosition.left}%`,
@@ -1009,31 +1192,28 @@ export default function App() {
                   ⚽
                 </div>
 
-                {/* Active Players */}
-                {FORMATIONS[tacticalFormat].map((pos, idx) => {
-                  const assigned = roster[idx];
-                  const nameLabel = assigned ? assigned.name : `Empty ${pos.label}`;
-                  const custom = customPositions[idx];
-                  const left = custom ? custom.left : pos.left;
-                  const top = custom ? custom.top : pos.top;
+                {/* Active Players (Pure React state driven coordinates - NO DOM appends, resolves duplicates!) */}
+                {tacticalLineup.map((pos) => {
+                  const nameLabel = pos.player ? pos.player.name : `Empty ${pos.label}`;
+                  const initials = pos.player ? pos.player.name.split(" ").map(n => n[0]).join("").substring(0,2).toUpperCase() : pos.label;
                   
                   return (
                     <div
-                      key={idx}
-                      id={String(idx)}
+                      key={pos.idx}
+                      id={String(pos.idx)}
                       draggable
-                      onDragStart={(e) => handleDragStart(e, String(idx))}
-                      onTouchMove={(e) => handleTouchMove(e, String(idx))}
+                      onDragStart={(e) => handleDragStartReact(e, String(pos.idx))}
+                      onTouchMove={(e) => handleTouchMoveReact(e, String(pos.idx))}
                       style={{
                         position: 'absolute',
-                        left: `${left}%`,
-                        top: `${top}%`,
+                        left: `${pos.left}%`,
+                        top: `${pos.top}%`,
                         transform: 'translate(-50%, -50%)',
                         touchAction: 'none'
                       }}
                       className="tactical-player z-20"
                     >
-                      <span>{assigned ? assigned.jerseyNumber : pos.label}</span>
+                      <span>{pos.player ? pos.player.jerseyNumber : initials}</span>
                       <div className="tactical-player-label">{nameLabel}</div>
                     </div>
                   );
@@ -1050,10 +1230,7 @@ export default function App() {
                     roster.slice(FORMATIONS[tacticalFormat].length).map(p => (
                       <div
                         key={p.id}
-                        id={`bench-${p.id}`}
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, `bench-${p.id}`)}
-                        className="tactical-player relative"
+                        className="tactical-player relative cursor-default"
                       >
                         <span>{p.jerseyNumber}</span>
                         <div className="tactical-player-label">{p.name}</div>
@@ -1122,7 +1299,7 @@ export default function App() {
             <div className="flex items-start justify-between">
               <div>
                 <h2 className="text-2xl font-bold text-slate-100 font-heading">AI Practice & Drill Generator</h2>
-                <p className="text-sm text-slate-400 no-print">Create custom soccer practice structures instantly.</p>
+                <p className="text-sm text-slate-400 no-print">Create custom, randomized soccer practices instantly.</p>
               </div>
               <button onClick={() => window.print()} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-white/10 rounded-lg text-xs font-semibold flex items-center gap-1.5 no-print">
                 Print Practice
@@ -1161,7 +1338,7 @@ export default function App() {
               </div>
               <div className="flex items-end">
                 <button onClick={handleGenerateAI} disabled={aiGenerating} className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-500/10">
-                  {aiGenerating ? 'Generating...' : 'Generate Plan'}
+                  {aiGenerating ? 'Generating...' : 'Generate Fresh Plan'}
                 </button>
               </div>
             </div>
@@ -1249,55 +1426,94 @@ export default function App() {
           </div>
         )}
 
-        {/* VIEW: Playbook Positions Info */}
+        {/* VIEW: Playbook & AI Coaching Assistant Chatbot */}
         {activeTab === 'playbook' && (
-          <div className="glass-panel p-6 animate-[fadeIn_0.3s_ease-out]">
-            <h2 className="text-2xl font-bold text-slate-100 font-heading mb-2">The Playbook: Positions 1-11</h2>
-            <p className="text-sm text-slate-400 mb-6">Understand the numbered positions in soccer and what attributes make players excel in their respective roles.</p>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="space-y-2 md:col-span-1 border-r border-white/10 pr-4 max-h-[500px] overflow-y-auto">
-                {Object.keys(PLAYBOOK_POSITIONS).map(num => (
-                  <button
-                    key={num}
-                    onClick={() => setPlaybookPos(parseInt(num))}
-                    className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-between border transition-all ${playbookPos === parseInt(num) ? 'bg-white/5 border-emerald-500 text-emerald-400' : 'border-transparent text-slate-300 hover:bg-white/5'}`}
-                  >
-                    <span>{PLAYBOOK_POSITIONS[num].title}</span>
-                    <span>→</span>
-                  </button>
-                ))}
-              </div>
+          <div className="space-y-6 animate-[fadeIn_0.3s_ease-out]">
+            {/* Playbook explanations */}
+            <div className="glass-panel p-6">
+              <h2 className="text-2xl font-bold text-slate-100 font-heading mb-2">The Playbook: Positions 1-11</h2>
+              <p className="text-sm text-slate-400 mb-6">Understand the numbered positions in soccer and what attributes make players excel in their respective roles.</p>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="space-y-2 md:col-span-1 border-r border-white/10 pr-4 max-h-[400px] overflow-y-auto">
+                  {Object.keys(PLAYBOOK_POSITIONS).map(num => (
+                    <button
+                      key={num}
+                      onClick={() => setPlaybookPos(parseInt(num))}
+                      className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-between border transition-all ${playbookPos === parseInt(num) ? 'bg-white/5 border-emerald-500 text-emerald-400' : 'border-transparent text-slate-300 hover:bg-white/5'}`}
+                    >
+                      <span>{PLAYBOOK_POSITIONS[num].title}</span>
+                      <span>→</span>
+                    </button>
+                  ))}
+                </div>
 
-              <div className="md:col-span-2 space-y-4">
-                <div className="bg-white/5 border border-white/5 p-6 rounded-xl space-y-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center font-black text-lg">
-                      {playbookPos}
+                <div className="md:col-span-2 space-y-4">
+                  <div className="bg-white/5 border border-white/5 p-6 rounded-xl space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center font-black text-lg">
+                        {playbookPos}
+                      </div>
+                      <h3 className="text-xl font-bold text-white font-heading">{PLAYBOOK_POSITIONS[playbookPos].title}</h3>
                     </div>
-                    <h3 className="text-xl font-bold text-white font-heading">{PLAYBOOK_POSITIONS[playbookPos].title}</h3>
-                  </div>
-                  
-                  <p className="text-slate-300 text-sm leading-relaxed">{PLAYBOOK_POSITIONS[playbookPos].description}</p>
-                  
-                  <div>
-                    <h4 className="text-xs text-slate-400 font-bold uppercase mb-2">Key Competencies & Skillsets</h4>
-                    <div className="flex flex-wrap gap-2">
-                      {PLAYBOOK_POSITIONS[playbookPos].attributes.map(attr => (
-                        <span key={attr} className="bg-indigo-900/40 text-indigo-300 border border-indigo-500/20 px-2.5 py-1 rounded-full text-xs font-semibold">{attr}</span>
-                      ))}
-                    </div>
-                  </div>
-                  
-                  <div className="bg-emerald-950/20 border border-emerald-500/20 p-4 rounded-lg flex gap-3">
-                    <span>💡</span>
+                    
+                    <p className="text-slate-300 text-sm leading-relaxed">{PLAYBOOK_POSITIONS[playbookPos].description}</p>
+                    
                     <div>
-                      <h5 className="text-xs font-bold text-emerald-400 uppercase">Coaching Pointer</h5>
-                      <p className="text-xs text-slate-300 mt-0.5">{PLAYBOOK_POSITIONS[playbookPos].coachingTip}</p>
+                      <h4 className="text-xs text-slate-400 font-bold uppercase mb-2">Key Competencies & Skillsets</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {PLAYBOOK_POSITIONS[playbookPos].attributes.map(attr => (
+                          <span key={attr} className="bg-indigo-900/40 text-indigo-300 border border-indigo-500/20 px-2.5 py-1 rounded-full text-xs font-semibold">{attr}</span>
+                        ))}
+                      </div>
+                    </div>
+                    
+                    <div className="bg-emerald-950/20 border border-emerald-500/20 p-4 rounded-lg flex gap-3">
+                      <span>💡</span>
+                      <div>
+                        <h5 className="text-xs font-bold text-emerald-400 uppercase">Coaching Pointer</h5>
+                        <p className="text-xs text-slate-300 mt-0.5">{PLAYBOOK_POSITIONS[playbookPos].coachingTip}</p>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
+            </div>
+
+            {/* AI COACHING QUESTION BOX (General AI Q&A Chatbot integration) */}
+            <div className="glass-panel p-6">
+              <h3 className="text-lg font-bold text-slate-200 mb-2 flex items-center gap-2">
+                <span>🤖</span> Ask the Team FC AI Coach
+              </h3>
+              <p className="text-xs text-slate-400 mb-4">Ask any soccer rule, coaching strategy, or tactical question (e.g. "What is offsides?", "How to play a 2-3-1?").</p>
+              
+              <form onSubmit={handleAskAICoach} className="flex gap-2">
+                <input 
+                  type="text" 
+                  value={aiQuestion}
+                  onChange={(e) => setAiQuestion(e.target.value)}
+                  placeholder="Ask a rule, tactical question, or drill advice..." 
+                  className="flex-1 bg-slate-900 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500" 
+                />
+                <button 
+                  type="submit" 
+                  disabled={aiThinking}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-sm"
+                >
+                  {aiThinking ? 'Thinking...' : 'Ask AI'}
+                </button>
+              </form>
+
+              {aiAnswer && (
+                <div className="mt-4 bg-slate-900/80 p-4 rounded-xl border border-white/5 animate-[fadeIn_0.2s_ease-out]">
+                  <div className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <span>💡</span> Coach AI Advisor:
+                  </div>
+                  <div className="text-xs text-slate-200 leading-relaxed whitespace-pre-wrap">
+                    {aiAnswer}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1392,7 +1608,7 @@ export default function App() {
             {/* Chat Form */}
             <form onSubmit={handleSendChat} className="flex gap-2">
               <input type="text" value={chatSender} onChange={(e) => setChatSender(e.target.value)} placeholder="Your Name" className="w-[120px] bg-slate-900 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500" required />
-              <input type="text" value={chatText} onChange={(e) => setChatText(e.target.value)} ref={chatMessageInputRef} placeholder="Type a message..." className="flex-1 bg-slate-900 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500" required />
+              <input type="text" value={chatText} onChange={(e) => setChatText(e.target.value)} placeholder="Type a message..." className="flex-1 bg-slate-900 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500" required />
               <button type="submit" className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-sm transition-all">
                 Send
               </button>
@@ -1427,6 +1643,53 @@ export default function App() {
                   <button onClick={handleCreateTeam} className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold">Create</button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Team settings (Rename and Logo/Badge choice) */}
+      {showTeamSettingsModal && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="glass-panel max-w-md w-full p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <h3 className="text-lg font-bold text-white">Edit Team Settings</h3>
+              <button onClick={() => setShowTeamSettingsModal(false)} className="text-slate-400 hover:text-white">✕</button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Rename Team</label>
+                <input 
+                  type="text" 
+                  value={teamNameInput} 
+                  onChange={(e) => setTeamNameInput(e.target.value)}
+                  placeholder="e.g. Blue Fire FC" 
+                  className="w-full bg-slate-950 border border-white/10 px-3 py-2 rounded-lg text-sm text-white focus:outline-none" 
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-slate-400 mb-2">Select Team Photo / Club Badge</label>
+                <div className="grid grid-cols-4 gap-2">
+                  {BADGES.map(badge => (
+                    <button
+                      key={badge.char}
+                      onClick={() => setTeamBadgeInput(badge.char)}
+                      className={`text-2xl p-2 rounded-lg border transition-all ${teamBadgeInput === badge.char ? 'border-emerald-500 bg-emerald-500/10' : 'border-white/5 bg-white/5 hover:bg-white/10'}`}
+                      title={badge.name}
+                    >
+                      {badge.char}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <button 
+                onClick={handleSaveTeamSettings}
+                className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold transition-all"
+              >
+                Save Settings
+              </button>
             </div>
           </div>
         </div>
@@ -1536,17 +1799,27 @@ export default function App() {
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="glass-panel max-w-md w-full p-6 space-y-4">
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <h3 className="text-lg font-bold text-white">Supabase Configuration</h3>
+              <h3 className="text-lg font-bold text-white">Database Settings</h3>
               <button onClick={() => setShowConfigModal(false)} className="text-slate-400 hover:text-white">✕</button>
             </div>
-            <div className="space-y-3">
-              <input type="text" value={dbUrl} onChange={(e) => setDbUrl(e.target.value)} placeholder="Supabase Project URL" className="w-full bg-slate-900 border border-white/10 px-3 py-2 rounded-lg text-sm text-white focus:outline-none" />
-              <input type="password" value={dbAnonKey} onChange={(e) => setDbAnonKey(e.target.value)} placeholder="Supabase Anon Key" className="w-full bg-slate-900 border border-white/10 px-3 py-2 rounded-lg text-sm text-white focus:outline-none" />
+            <div className="space-y-3 text-xs text-slate-400">
+              <p className="bg-emerald-500/10 text-emerald-400 p-2.5 rounded-lg border border-emerald-500/20 leading-relaxed font-semibold">
+                ℹ️ <strong>Admin Note:</strong> Configure this Supabase credentials block once as the administrator/host. Coaches & parents who create or join team channels will share this unified cloud database automatically via key password codes.
+              </p>
+              
+              <div className="space-y-2 mt-2">
+                <label className="block text-[10px] text-slate-300 font-bold uppercase">Supabase Project URL</label>
+                <input type="text" value={dbUrl} onChange={(e) => setDbUrl(e.target.value)} placeholder="https://your-project.supabase.co" className="w-full bg-slate-900 border border-white/10 px-3 py-2 rounded-lg text-sm text-white focus:outline-none" />
+              </div>
+              <div className="space-y-2">
+                <label className="block text-[10px] text-slate-300 font-bold uppercase">Supabase Anon Key</label>
+                <input type="password" value={dbAnonKey} onChange={(e) => setDbAnonKey(e.target.value)} placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." className="w-full bg-slate-900 border border-white/10 px-3 py-2 rounded-lg text-sm text-white focus:outline-none" />
+              </div>
               <button onClick={() => {
                 localStorage.setItem("teamfc_supabase_config", JSON.stringify({ url: dbUrl, anonKey: dbAnonKey }));
                 setShowConfigModal(false);
                 loadTeams();
-              }} className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold">
+              }} className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold transition-all mt-2">
                 Save & Reconnect
               </button>
             </div>
