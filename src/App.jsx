@@ -1508,7 +1508,7 @@ export default function App() {
                           draggable
                           onDragStart={(e) => handleDragStart(e, String(idx))}
                           onTouchMove={(e) => handleTouchMove(e, String(idx))}
-                          onDragOver={(e) => e.preventDefa
+                          onDragOver={(e) => e.preventDefault()}
                           onClick={() => setActiveSlotSelector(idx)}
                           style={{
                             position: 'absolute',
