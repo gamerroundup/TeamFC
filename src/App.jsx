@@ -358,9 +358,30 @@ export default function App() {
       setTeamBadgeInput(currentTeam.badge || '⚽');
     }
 
+  const loadLocalTeamDetailsFallback = (teamId) => {
+    let fallbackRoster = JSON.parse(localStorage.getItem(`teamfc_roster_${teamId}`)) || [];
+    if (fallbackRoster.length === 0) {
+      fallbackRoster = generateDefault20Roster();
+      localStorage.setItem(`teamfc_roster_${teamId}`, JSON.stringify(fallbackRoster));
+    }
+    setRoster(fallbackRoster);
+
+    setGames(JSON.parse(localStorage.getItem(`teamfc_games_${teamId}`)) || []);
+    setChatMessages(JSON.parse(localStorage.getItem(`teamfc_chat_${teamId}`)) || []);
+  };
+
+  const loadTeamDetails = async (teamId) => {
+    const currentTeam = teams.find(t => t.id === teamId);
+    if (currentTeam) {
+      setTeamNameInput(currentTeam.name);
+      setTeamBadgeInput(currentTeam.badge || '⚽');
+    }
+
     if (client) {
       try {
-        const { data: rosterData } = await client.from('roster').select('*').eq('team_id', teamId);
+        const { data: rosterData, error: rErr } = await client.from('roster').select('*').eq('team_id', teamId);
+        if (rErr) throw rErr;
+
         if (!rosterData || rosterData.length === 0) {
           const default20 = generateDefault20Roster().map(p => ({
             team_id: teamId,
@@ -374,30 +395,23 @@ export default function App() {
           setRoster(rosterData || []);
         }
         
-        const { data: gamesData } = await client.from('games').select('*, game_events(*)').eq('team_id', teamId);
+        const { data: gamesData, error: gErr } = await client.from('games').select('*, game_events(*)').eq('team_id', teamId);
+        if (gErr) throw gErr;
         setGames(gamesData || []);
         
-        const { data: chatData } = await client.from('chat_messages').select('*').eq('team_id', teamId).order('created_at', { ascending: true });
+        const { data: chatData, error: cErr } = await client.from('chat_messages').select('*').eq('team_id', teamId).order('created_at', { ascending: true });
+        if (cErr) throw cErr;
         setChatMessages(chatData || []);
       } catch (err) {
-        console.error("Supabase loadTeamDetails error", err);
+        console.warn("Supabase loadTeamDetails error, falling back to local storage:", err);
+        loadLocalTeamDetailsFallback(teamId);
       }
+    } else {
+      loadLocalTeamDetailsFallback(teamId);
     }
 
     setCalendarEvents(JSON.parse(localStorage.getItem(`teamfc_cal_${teamId}`)) || []);
     setSavedDrills(JSON.parse(localStorage.getItem(`teamfc_drills_${teamId}`)) || []);
-    
-    if (!client) {
-      let fallbackRoster = JSON.parse(localStorage.getItem(`teamfc_roster_${teamId}`)) || [];
-      if (fallbackRoster.length === 0) {
-        fallbackRoster = generateDefault20Roster();
-        localStorage.setItem(`teamfc_roster_${teamId}`, JSON.stringify(fallbackRoster));
-      }
-      setRoster(fallbackRoster);
-
-      setGames(JSON.parse(localStorage.getItem(`teamfc_games_${teamId}`)) || []);
-      setChatMessages(JSON.parse(localStorage.getItem(`teamfc_chat_${teamId}`)) || []);
-    }
   };
 
   const handleUpdatePlayerField = async (playerId, fieldName, value) => {
