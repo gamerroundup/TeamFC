@@ -218,6 +218,7 @@ export default function App() {
   // Tactical Board State
   const [tacticalFormat, setTacticalFormat] = useState('7v7');
   const [draggedElementId, setDraggedElementId] = useState(null);
+  const [customPositions, setCustomPositions] = useState({});
   
   // Unified React state-based lineup coordinates (resolves old ghost duplicates during drag)
   const [tacticalLineup, setTacticalLineup] = useState([]);
@@ -242,29 +243,10 @@ export default function App() {
   useEffect(() => {
     if (currentTeamId) {
       loadTeamDetails(currentTeamId);
+      const savedPositions = JSON.parse(localStorage.getItem(`teamfc_positions_${currentTeamId}`)) || {};
+      setCustomPositions(savedPositions);
     }
   }, [currentTeamId, dbUrl, dbAnonKey]);
-
-  // --- Setup Tactical Lineup based on current formation and roster ---
-  useEffect(() => {
-    const defaultCoords = FORMATIONS[tacticalFormat] || [];
-    
-    // Check if there are custom saved coordinates in localStorage
-    const savedPositions = JSON.parse(localStorage.getItem(`teamfc_positions_${currentTeamId}`)) || {};
-
-    const initialLineup = defaultCoords.map((coord, idx) => {
-      const player = roster[idx] || null;
-      const customPos = savedPositions[idx];
-      return {
-        idx,
-        label: coord.label,
-        left: customPos ? customPos.left : coord.left,
-        top: customPos ? customPos.top : coord.top,
-        player
-      };
-    });
-    setTacticalLineup(initialLineup);
-  }, [tacticalFormat, roster, currentTeamId]);
 
   // --- Scroll chat to bottom ---
   useEffect(() => {
@@ -834,25 +816,25 @@ export default function App() {
   };
 
   // --- Tactical Board Coordinate Updates (Drag & Touch) ---
-  const handleDragStartReact = (e, indexOrId) => {
-    e.dataTransfer.setData("text/plain", indexOrId);
-    setDraggedElementId(indexOrId);
+  const handleDragStart = (e, id) => {
+    e.dataTransfer.setData("text/plain", id);
+    setDraggedElementId(id);
   };
 
-  const handleDropReact = (e) => {
+  const handleDrop = (e) => {
     e.preventDefault();
     const id = draggedElementId;
-    if (id === null) return;
+    if (!id) return;
     
     const field = document.getElementById("tacticalSoccerField");
     const rect = field.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
     
-    updateCoordinateReact(id, x, y);
+    updateCoordinate(id, x, y);
   };
 
-  const handleTouchMoveReact = (e, indexOrId) => {
+  const handleTouchMove = (e, id) => {
     if (e.touches.length === 0) return;
     const touch = e.touches[0];
     
@@ -861,33 +843,26 @@ export default function App() {
     const x = ((touch.clientX - rect.left) / rect.width) * 100;
     const y = ((touch.clientY - rect.top) / rect.height) * 100;
     
-    updateCoordinateReact(indexOrId, x, y);
-    
-    // Prevent document scrolling during drag
-    e.preventDefault();
+    updateCoordinate(id, x, y);
   };
 
-  const updateCoordinateReact = (id, x, y) => {
+  const updateCoordinate = (id, x, y) => {
     const boundedX = Math.max(3, Math.min(97, x));
     const boundedY = Math.max(3, Math.min(97, y));
 
     if (id === "ball") {
       setBallPosition({ left: boundedX, top: boundedY });
     } else {
-      const idx = parseInt(id);
-      const nextLineup = tacticalLineup.map(item => {
-        if (item.idx === idx) {
-          return { ...item, left: boundedX, top: boundedY };
-        }
-        return item;
-      });
-      setTacticalLineup(nextLineup);
-      
-      // Save coordinates to customPositions state and local storage
-      const nextCustom = { ...customPositions, [idx]: { left: boundedX, top: boundedY } };
-      setCustomPositions(nextCustom);
-      localStorage.setItem(`teamfc_positions_${currentTeamId}`, JSON.stringify(nextCustom));
+      const nextPos = { ...customPositions, [id]: { left: boundedX, top: boundedY } };
+      setCustomPositions(nextPos);
+      localStorage.setItem(`teamfc_positions_${currentTeamId}`, JSON.stringify(nextPos));
     }
+  };
+
+  const handleResetBoard = () => {
+    setCustomPositions({});
+    localStorage.removeItem(`teamfc_positions_${currentTeamId}`);
+    setBallPosition({ left: 50, top: 50 });
   };
 
   // --- Scoreboard calculations ---
@@ -1162,7 +1137,7 @@ export default function App() {
               <div 
                 id="tacticalSoccerField" 
                 onDragOver={(e) => e.preventDefault()} 
-                onDrop={handleDropReact} 
+                onDrop={handleDrop} 
                 className="soccer-field relative w-full rounded-lg"
               >
                 <div className="soccer-field-center-circle"></div>
@@ -1178,8 +1153,8 @@ export default function App() {
                 <div 
                   id="ball" 
                   draggable 
-                  onDragStart={(e) => handleDragStartReact(e, 'ball')}
-                  onTouchMove={(e) => handleTouchMoveReact(e, 'ball')}
+                  onDragStart={(e) => handleDragStart(e, 'ball')}
+                  onTouchMove={(e) => handleTouchMove(e, 'ball')}
                   style={{
                     position: 'absolute',
                     left: `${ballPosition.left}%`,
@@ -1192,28 +1167,31 @@ export default function App() {
                   ⚽
                 </div>
 
-                {/* Active Players (Pure React state driven coordinates - NO DOM appends, resolves duplicates!) */}
-                {tacticalLineup.map((pos) => {
-                  const nameLabel = pos.player ? pos.player.name : `Empty ${pos.label}`;
-                  const initials = pos.player ? pos.player.name.split(" ").map(n => n[0]).join("").substring(0,2).toUpperCase() : pos.label;
+                {/* Active Players */}
+                {FORMATIONS[tacticalFormat].map((pos, idx) => {
+                  const assigned = roster[idx];
+                  const nameLabel = assigned ? assigned.name : `Empty ${pos.label}`;
+                  const custom = customPositions[idx];
+                  const left = custom ? custom.left : pos.left;
+                  const top = custom ? custom.top : pos.top;
                   
                   return (
                     <div
-                      key={pos.idx}
-                      id={String(pos.idx)}
+                      key={idx}
+                      id={String(idx)}
                       draggable
-                      onDragStart={(e) => handleDragStartReact(e, String(pos.idx))}
-                      onTouchMove={(e) => handleTouchMoveReact(e, String(pos.idx))}
+                      onDragStart={(e) => handleDragStart(e, String(idx))}
+                      onTouchMove={(e) => handleTouchMove(e, String(idx))}
                       style={{
                         position: 'absolute',
-                        left: `${pos.left}%`,
-                        top: `${pos.top}%`,
+                        left: `${left}%`,
+                        top: `${top}%`,
                         transform: 'translate(-50%, -50%)',
                         touchAction: 'none'
                       }}
                       className="tactical-player z-20"
                     >
-                      <span>{pos.player ? pos.player.jerseyNumber : initials}</span>
+                      <span>{assigned ? assigned.jerseyNumber : pos.label}</span>
                       <div className="tactical-player-label">{nameLabel}</div>
                     </div>
                   );
@@ -1230,7 +1208,10 @@ export default function App() {
                     roster.slice(FORMATIONS[tacticalFormat].length).map(p => (
                       <div
                         key={p.id}
-                        className="tactical-player relative cursor-default"
+                        id={`bench-${p.id}`}
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, `bench-${p.id}`)}
+                        className="tactical-player relative"
                       >
                         <span>{p.jerseyNumber}</span>
                         <div className="tactical-player-label">{p.name}</div>
