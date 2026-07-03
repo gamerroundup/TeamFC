@@ -1,0 +1,308 @@
+/* Premium Dark Mode Glassmorphism Style System for Team FC */
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+
+:root {
+  --font-heading: 'Outfit', sans-serif;
+  --font-body: 'Plus Jakarta Sans', sans-serif;
+  
+  /* Color Palette - Vibrant Emerald/Teal and Deep Indigo Dark Mode */
+  --bg-primary: #0a0f1d;
+  --bg-secondary: #0f172a;
+  --glass-bg: rgba(15, 23, 42, 0.45);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-highlight: rgba(255, 255, 255, 0.03);
+  
+  --color-primary: #10b981; /* Vibrant Emerald */
+  --color-primary-hover: #059669;
+  --color-secondary: #6366f1; /* Deep Indigo */
+  --color-secondary-hover: #4f46e5;
+  
+  --accent-cyan: #06b6d4;
+  --accent-rose: #f43f5e;
+  --accent-amber: #f59e0b;
+  
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  
+  --glow-green: 0 0 20px rgba(16, 185, 129, 0.25);
+  --glow-indigo: 0 0 20px rgba(99, 102, 241, 0.25);
+  --glow-cyan: 0 0 20px rgba(6, 182, 212, 0.25);
+  
+  --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: var(--bg-primary);
+  background-image: 
+    radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.15) 0px, transparent 50%),
+    radial-gradient(at 100% 0%, rgba(16, 185, 129, 0.12) 0px, transparent 50%),
+    radial-gradient(at 50% 100%, rgba(6, 182, 212, 0.1) 0px, transparent 50%);
+  background-attachment: fixed;
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+  line-height: 1.5;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+  letter-spacing: -0.02em;
+}
+
+/* Glassmorphism Classes */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  border-radius: 1rem;
+}
+
+.glass-panel-hover:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+  background: rgba(15, 23, 42, 0.55);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.45);
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 0.75rem;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Soccer Tactical Field Component */
+.soccer-field {
+  position: relative;
+  aspect-ratio: 1.4 / 1;
+  background: linear-gradient(135deg, #22c55e 0%, #15803d 50%, #166534 100%);
+  border: 4px solid rgba(255, 255, 255, 0.85);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: inset 0 0 80px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.5);
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.12) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.12) 1px, transparent 1px);
+  background-size: 5% 100%;
+}
+
+.soccer-field::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 50%;
+  bottom: 0;
+  width: 2px;
+  background: rgba(255, 255, 255, 0.6);
+  transform: translateX(-50%);
+}
+
+.soccer-field-center-circle {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 20%;
+  aspect-ratio: 1;
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.soccer-field-center-spot {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 8px;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.soccer-field-penalty-area-left {
+  position: absolute;
+  top: 20%; left: 0;
+  width: 16.5%;
+  height: 60%;
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  border-left: none;
+}
+
+.soccer-field-penalty-area-right {
+  position: absolute;
+  top: 20%; right: 0;
+  width: 16.5%;
+  height: 60%;
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  border-right: none;
+}
+
+.soccer-field-goal-area-left {
+  position: absolute;
+  top: 35%; left: 0;
+  width: 5.5%;
+  height: 30%;
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  border-left: none;
+}
+
+.soccer-field-goal-area-right {
+  position: absolute;
+  top: 35%; right: 0;
+  width: 5.5%;
+  height: 30%;
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  border-right: none;
+}
+
+.soccer-field-penalty-spot-left {
+  position: absolute;
+  top: 50%; left: 11%;
+  width: 6px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.soccer-field-penalty-spot-right {
+  position: absolute;
+  top: 50%; right: 11%;
+  width: 6px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 50%;
+  transform: translate(50%, -50%);
+}
+
+/* Tactical Board Player Circles */
+.tactical-player {
+  position: absolute;
+  width: 38px;
+  height: 38px;
+  background: radial-gradient(circle, var(--color-secondary) 30%, var(--bg-secondary) 100%);
+  border: 2px solid var(--text-primary);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  cursor: grab;
+  user-select: none;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  z-index: 10;
+}
+
+.tactical-player:active {
+  cursor: grabbing;
+  transform: scale(1.15);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6);
+}
+
+.tactical-player.bench-player {
+  position: relative;
+  top: auto; left: auto;
+  margin: 4px;
+}
+
+.tactical-player-label {
+  position: absolute;
+  bottom: -20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 23, 42, 0.85);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Pulse Animation for active timers */
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+  70% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+.timer-running {
+  animation: pulse 1.5s infinite;
+  border-color: var(--color-primary) !important;
+}
+
+@keyframes pulse-indigo {
+  0% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4); }
+  70% { box-shadow: 0 0 0 8px rgba(99, 102, 241, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
+}
+
+.timer-running-indigo {
+  animation: pulse-indigo 1.5s infinite;
+  border-color: var(--color-secondary) !important;
+}
+
+/* Custom switch animations */
+.tab-content {
+  display: none;
+}
+.tab-content.active {
+  display: block;
+  animation: fadeIn 0.4s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Print Styles for AI Practice Planner */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-area, .print-area * {
+    visibility: visible;
+  }
+  .print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    color: #000 !important;
+    background: #fff !important;
+  }
+  .print-area button, .print-area .no-print {
+    display: none !important;
+  }
+}

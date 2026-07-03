@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Team FC - AI Soccer Coaching Platform</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+            heading: ['Outfit', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Supabase JS Client -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Custom Styles -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-[#0a0f1d] text-slate-100 min-h-screen flex flex-col">
+
+  <!-- Header / Navigation Bar -->
+  <header class="glass-panel border-b border-white/10 sticky top-0 z-50 px-4 py-3 mx-4 mt-4 mb-2 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="bg-gradient-to-tr from-emerald-500 to-indigo-500 p-2.5 rounded-xl shadow-lg shadow-emerald-500/10">
+        <i data-lucide="activity" class="w-6 h-6 text-white animate-pulse"></i>
+      </div>
+      <div>
+        <h1 class="text-xl font-bold bg-gradient-to-r from-emerald-400 to-indigo-400 bg-clip-text text-transparent">Team FC</h1>
+        <p class="text-[10px] text-slate-400 font-medium tracking-wider uppercase">AI Soccer Coach</p>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <nav class="hidden md:flex items-center gap-1 bg-slate-900/50 p-1 rounded-xl border border-white/5">
+      <button onclick="switchTab('dashboard')" class="nav-tab px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 flex items-center gap-2 text-emerald-400 bg-white/5" id="tab-btn-dashboard">
+        <i data-lucide="layout-dashboard" class="w-4 h-4"></i> Dashboard
+      </button>
+      <button onclick="switchTab('tactical')" class="nav-tab px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 flex items-center gap-2 text-slate-400 hover:text-white" id="tab-btn-tactical">
+        <i data-lucide="presentation" class="w-4 h-4"></i> Tactical Board
+      </button>
+      <button onclick="switchTab('ai-coaching')" class="nav-tab px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 flex items-center gap-2 text-slate-400 hover:text-white" id="tab-btn-ai-coaching">
+        <i data-lucide="sparkles" class="w-4 h-4"></i> AI Planner
+      </button>
+      <button onclick="switchTab('playbook')" class="nav-tab px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 flex items-center gap-2 text-slate-400 hover:text-white" id="tab-btn-playbook">
+        <i data-lucide="book-open" class="w-4 h-4"></i> Playbook
+      </button>
+      <button onclick="switchTab('chat')" class="nav-tab px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 flex items-center gap-2 text-slate-400 hover:text-white relative" id="tab-btn-chat">
+        <i data-lucide="message-square" class="w-4 h-4"></i> Chat
+      </button>
+    </nav>
+
+    <!-- Channel / Team Switcher Selector -->
+    <div class="flex items-center gap-3">
+      <!-- Team Dropdown / Access Code UI -->
+      <div class="flex items-center gap-2 bg-slate-900/80 px-3 py-1.5 rounded-lg border border-white/10">
+        <i data-lucide="users" class="w-4 h-4 text-indigo-400"></i>
+        <select id="teamSelector" onchange="handleTeamChange()" class="bg-transparent text-sm font-semibold text-white focus:outline-none cursor-pointer max-w-[140px]">
+          <option value="" class="bg-slate-900 text-slate-400">-- Choose Team --</option>
+        </select>
+        <button onclick="openTeamModal()" class="p-1 hover:bg-white/10 rounded-md transition-all" title="Manage Teams">
+          <i data-lucide="plus-circle" class="w-4 h-4 text-emerald-400"></i>
+        </button>
+      </div>
+
+      <!-- Supabase Connection Config Button (Settings) -->
+      <button onclick="openConfigModal()" class="p-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all" title="Database Settings">
+        <i data-lucide="settings" class="w-5 h-5 text-slate-400 hover:text-white"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- Mobile Bottom Tab Bar -->
+  <div class="md:hidden fixed bottom-0 left-0 right-0 bg-slate-950/90 border-t border-white/10 px-4 py-2 flex justify-around items-center z-50 backdrop-blur-md">
+    <button onclick="switchTab('dashboard')" class="mobile-nav-tab flex flex-col items-center gap-0.5 text-emerald-400" id="mob-tab-dashboard">
+      <i data-lucide="layout-dashboard" class="w-5 h-5"></i>
+      <span class="text-[9px]">Dashboard</span>
+    </button>
+    <button onclick="switchTab('tactical')" class="mobile-nav-tab flex flex-col items-center gap-0.5 text-slate-400" id="mob-tab-tactical">
+      <i data-lucide="presentation" class="w-5 h-5"></i>
+      <span class="text-[9px]">Tactics</span>
+    </button>
+    <button onclick="switchTab('ai-coaching')" class="mobile-nav-tab flex flex-col items-center gap-0.5 text-slate-400" id="mob-tab-ai-coaching">
+      <i data-lucide="sparkles" class="w-5 h-5"></i>
+      <span class="text-[9px]">AI Plans</span>
+    </button>
+    <button onclick="switchTab('playbook')" class="mobile-nav-tab flex flex-col items-center gap-0.5 text-slate-400" id="mob-tab-playbook">
+      <i data-lucide="book-open" class="w-5 h-5"></i>
+      <span class="text-[9px]">Playbook</span>
+    </button>
+    <button onclick="switchTab('chat')" class="mobile-nav-tab flex flex-col items-center gap-0.5 text-slate-400" id="mob-tab-chat">
+      <i data-lucide="message-square" class="w-5 h-5"></i>
+      <span class="text-[9px]">Chat</span>
+    </button>
+  </div>
+
+  <!-- Primary Content Area -->
+  <main class="flex-1 px-4 pb-24 md:pb-8 max-w-7xl mx-auto w-full">
+    
+    <!-- Core Views (Tabs) -->
+    <section class="w-full space-y-6">
+      
+      <!-- TAB: Dashboard, Schedules & Stats -->
+      <div id="tab-dashboard" class="tab-content active space-y-6">
+        <!-- Dashboard Welcome / Quick Stats -->
+        <div class="glass-panel p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div>
+            <h2 class="text-2xl font-bold text-slate-50" id="currentTeamTitle">Welcome to Team FC</h2>
+            <p class="text-sm text-slate-400" id="currentTeamCodeDisplay">Select or create a team channel to begin tracking stats, scheduling games, and planning practices.</p>
+          </div>
+          <div class="flex gap-4">
+            <div class="bg-white/5 border border-white/5 rounded-xl px-4 py-2 text-center min-w-[70px]">
+              <span class="block text-2xl font-black text-emerald-400" id="stat-wins">0</span>
+              <span class="text-[10px] text-slate-400 font-bold uppercase">Wins</span>
+            </div>
+            <div class="bg-white/5 border border-white/5 rounded-xl px-4 py-2 text-center min-w-[70px]">
+              <span class="block text-2xl font-black text-indigo-400" id="stat-draws">0</span>
+              <span class="text-[10px] text-slate-400 font-bold uppercase">Draws</span>
+            </div>
+            <div class="bg-white/5 border border-white/5 rounded-xl px-4 py-2 text-center min-w-[70px]">
+              <span class="block text-2xl font-black text-rose-400" id="stat-losses">0</span>
+              <span class="text-[10px] text-slate-400 font-bold uppercase">Losses</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Roster Panel -->
+        <div class="glass-panel p-6">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-bold flex items-center gap-2 text-slate-200">
+              <i data-lucide="clipboard-list" class="w-5 h-5 text-indigo-400"></i> Roster & Stats (Max 20 Players)
+            </h3>
+            <button onclick="openRosterModal()" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-all">
+              <i data-lucide="user-plus" class="w-3.5 h-3.5"></i> Manage Roster
+            </button>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="border-b border-white/10 text-slate-400 text-xs uppercase font-bold">
+                  <th class="py-2 px-3">Jersey</th>
+                  <th class="py-2 px-3">Player Name</th>
+                  <th class="py-2 px-3 text-center">Goals</th>
+                  <th class="py-2 px-3 text-center">Assists</th>
+                  <th class="py-2 px-3 text-center">Points</th>
+                </tr>
+              </thead>
+              <tbody id="rosterStatsList" class="text-sm divide-y divide-white/5">
+                <tr>
+                  <td colspan="5" class="py-6 text-center text-slate-400 italic">No players added to roster yet. Click Manage Roster.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Schedule & Game Log Panels -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <!-- Upcoming Games / Schedule -->
+          <div class="glass-panel p-6 flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold flex items-center gap-2 text-slate-200">
+                  <i data-lucide="calendar" class="w-5 h-5 text-emerald-400"></i> Game Schedule
+                </h3>
+                <button onclick="openAddGameModal()" class="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-all">
+                  <i data-lucide="plus" class="w-3.5 h-3.5"></i> Add Game
+                </button>
+              </div>
+              <div class="space-y-3 max-h-[300px] overflow-y-auto pr-1" id="scheduleList">
+                <div class="text-center py-8 text-slate-400 italic text-sm">No games scheduled yet.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Past Matches & Outcomes -->
+          <div class="glass-panel p-6 flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold flex items-center gap-2 text-slate-200">
+                  <i data-lucide="trophy" class="w-5 h-5 text-amber-500"></i> Match History & Stats
+                </h3>
+              </div>
+              <div class="space-y-3 max-h-[300px] overflow-y-auto pr-1" id="matchHistoryList">
+                <div class="text-center py-8 text-slate-400 italic text-sm">No match history available yet.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: Electronic Tactical Board -->
+      <div id="tab-tactical" class="tab-content space-y-6">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          
+          <!-- Left Column: Soccer Field and Roster -->
+          <div class="lg:col-span-8 glass-panel p-6">
+            <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
+              <div>
+                <h2 class="text-2xl font-bold flex items-center gap-2 text-slate-100">
+                  <i data-lucide="presentation" class="text-emerald-400"></i> Electronic Tactical Board
+                </h2>
+                <p class="text-sm text-slate-400">Select format, drag players (or the ball ⚽), and configure your lineup.</p>
+              </div>
+              
+              <div class="flex flex-wrap items-center gap-3">
+                <button onclick="resetBoardPositions()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-lg border border-white/5 transition-all flex items-center gap-1">
+                  <i data-lucide="rotate-ccw" class="w-3.5 h-3.5 text-indigo-400"></i> Reset Positions
+                </button>
+                <div class="flex items-center gap-2">
+                  <label class="text-xs text-slate-400 font-bold uppercase">Format:</label>
+                  <select id="tacticalFormat" onchange="handleFormationChange()" class="bg-slate-900 border border-white/10 px-3 py-1.5 rounded-lg text-sm text-white focus:outline-none cursor-pointer">
+                    <option value="6v6">6v6 Formations</option>
+                    <option value="7v7" selected>7v7 Formations</option>
+                    <option value="8v8">8v8 Formations</option>
+                    <option value="9v9">9v9 Formations</option>
+                    <option value="11v11">11v11 Formations</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- Interactive Soccer Field -->
+            <div class="relative w-full overflow-hidden bg-slate-950/40 rounded-xl p-2 border border-white/10">
+              <div id="tacticalSoccerField" class="soccer-field relative w-full rounded-lg">
+                <div class="soccer-field-center-circle"></div>
+                <div class="soccer-field-center-spot"></div>
+                <div class="soccer-field-penalty-area-left"></div>
+                <div class="soccer-field-penalty-area-right"></div>
+                <div class="soccer-field-goal-area-left"></div>
+                <div class="soccer-field-goal-area-right"></div>
+                <div class="soccer-field-penalty-spot-left"></div>
+                <div class="soccer-field-penalty-spot-right"></div>
+                
+                <!-- Soccer Ball Element -->
+                <div id="tacticalBall" class="absolute w-8 h-8 bg-white text-slate-900 border-2 border-slate-950 rounded-full flex items-center justify-center text-sm font-bold shadow-lg cursor-grab z-20" style="top: 50%; left: 50%; transform: translate(-50%, -50%);" draggable="true">
+                  ⚽
+                </div>
+
+                <!-- Player elements will be dynamically added here -->
+              </div>
+            </div>
+
+            <!-- Roster Bench / Subs Area -->
+            <div class="mt-6 bg-slate-900/50 p-4 rounded-xl border border-white/5">
+              <div class="flex items-center justify-between mb-3">
+                <h4 class="text-sm font-bold text-slate-300 flex items-center gap-1.5">
+                  <i data-lucide="users" class="w-4 h-4 text-indigo-400"></i> Bench / Reserve Players
+                </h4>
+                <p class="text-[10px] text-slate-400">Drag or click to assign position or move to field</p>
+              </div>
+              <div id="benchContainer" class="flex flex-wrap gap-3 min-h-[60px] p-2 bg-slate-950/40 border border-dashed border-white/10 rounded-lg items-center">
+                <p class="text-xs text-slate-500 italic w-full text-center py-2">Add roster players first or load them onto the bench.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right Column: 3-Timer Dashboard Panel (Moved here) -->
+          <div class="lg:col-span-4 glass-panel p-6 space-y-5">
+            <div class="border-b border-white/10 pb-3">
+              <h3 class="text-lg font-bold flex items-center gap-2 text-slate-200">
+                <i data-lucide="timer" class="text-indigo-400"></i> Tactical 3-Timer Dashboard
+              </h3>
+              <p class="text-xs text-slate-400">Track game halves and manage substitution rotations live.</p>
+            </div>
+
+            <!-- Timer 1: Game Timer (Half Time) -->
+            <div class="bg-slate-950/40 p-4 border border-white/10 rounded-xl flex flex-col items-center justify-center relative" id="gameTimerCard">
+              <div class="absolute top-2 left-2 bg-emerald-500/10 text-emerald-400 text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded border border-emerald-500/20">Game Time</div>
+              <span class="text-3xl font-black text-slate-100 font-mono tracking-widest mt-2" id="timerGameDisplay">00:00.0</span>
+              <p class="text-[9px] text-slate-500 font-semibold mb-3">Target Max: 55:00</p>
+              <div class="flex gap-2 w-full">
+                <button onclick="toggleTimer('game')" id="btnGamePlay" class="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1">
+                  <i data-lucide="play" class="w-3 h-3"></i> Start
+                </button>
+                <button onclick="resetTimer('game')" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-lg border border-white/5 transition-all flex items-center justify-center gap-1">
+                  <i data-lucide="rotate-ccw" class="w-3 h-3"></i> Reset
+                </button>
+              </div>
+            </div>
+
+            <!-- Timer 2: Sub Line 1 Timer -->
+            <div class="bg-slate-950/40 p-4 border border-white/10 rounded-xl flex flex-col items-center justify-center relative" id="sub1TimerCard">
+              <div class="absolute top-2 left-2 bg-indigo-500/10 text-indigo-400 text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded border border-indigo-500/20">Sub Line 1</div>
+              <span class="text-2xl font-black text-slate-100 font-mono tracking-widest mt-2" id="timerSub1Display">00:00.0</span>
+              <p class="text-[9px] text-slate-500 font-semibold mb-3">Rotation Monitor 1</p>
+              <div class="flex gap-2 w-full">
+                <button onclick="toggleTimer('sub1')" id="btnSub1Play" class="flex-1 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1">
+                  <i data-lucide="play" class="w-3 h-3"></i> Start
+                </button>
+                <button onclick="resetTimer('sub1')" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-lg border border-white/5 transition-all flex items-center justify-center gap-1">
+                  <i data-lucide="rotate-ccw" class="w-3 h-3"></i> Reset
+                </button>
+              </div>
+            </div>
+
+            <!-- Timer 3: Sub Line 2 Timer -->
+            <div class="bg-slate-950/40 p-4 border border-white/10 rounded-xl flex flex-col items-center justify-center relative" id="sub2TimerCard">
+              <div class="absolute top-2 left-2 bg-indigo-500/10 text-indigo-400 text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded border border-indigo-500/20">Sub Line 2</div>
+              <span class="text-2xl font-black text-slate-100 font-mono tracking-widest mt-2" id="timerSub2Display">00:00.0</span>
+              <p class="text-[9px] text-slate-500 font-semibold mb-3">Rotation Monitor 2</p>
+              <div class="flex gap-2 w-full">
+                <button onclick="toggleTimer('sub2')" id="btnSub2Play" class="flex-1 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1">
+                  <i data-lucide="play" class="w-3 h-3"></i> Start
+                </button>
+                <button onclick="resetTimer('sub2')" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-lg border border-white/5 transition-all flex items-center justify-center gap-1">
+                  <i data-lucide="rotate-ccw" class="w-3 h-3"></i> Reset
+                </button>
+              </div>
+            </div>
+          </div>
+          
+        </div>
+      </div>
+
+      <!-- TAB: AI Practice Planner & Drill Generator -->
+      <div id="tab-ai-coaching" class="tab-content space-y-6">
+        <div class="glass-panel p-6 print-area">
+          <div class="flex items-start justify-between mb-6">
+            <div>
+              <h2 class="text-2xl font-bold flex items-center gap-2 text-slate-100">
+                <i data-lucide="sparkles" class="text-indigo-400"></i> AI Practice & Drill Generator
+              </h2>
+              <p class="text-sm text-slate-400 no-print">Create custom practice plans, structured warmups, tactical scenarios, and drills.</p>
+            </div>
+            <button onclick="window.print()" class="no-print px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-white/10 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all">
+              <i data-lucide="printer" class="w-3.5 h-3.5"></i> Print Plan
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 no-print">
+            <div>
+              <label class="block text-xs font-bold text-slate-400 mb-1">Focus Area</label>
+              <select id="aiFocus" class="w-full bg-slate-900 border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none">
+                <option value="dribbling">Dribbling & Ball Control</option>
+                <option value="passing">Passing & Movement</option>
+                <option value="shooting">Shooting & Finishing</option>
+                <option value="defense">Defending Principles</option>
+                <option value="tactics">Game Scenarios & Positioning</option>
+                <option value="fitness">Soccer Fitness & Agility</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-400 mb-1">Age / Level</label>
+              <select id="aiAge" class="w-full bg-slate-900 border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none">
+                <option value="u8">U8 Rec (6-7 yrs)</option>
+                <option value="u10" selected>U10 Rec (8-9 yrs)</option>
+                <option value="u12">U12 Rec (10-11 yrs)</option>
+                <option value="u14">U14+ (12+ yrs)</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-400 mb-1">Format</label>
+              <select id="aiFormat" class="w-full bg-slate-900 border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none">
+                <option value="6v6">6v6 Match Play</option>
+                <option value="7v7" selected>7v7 Match Play</option>
+                <option value="9v9">9v9 Match Play</option>
+                <option value="11v11">11v11 Match Play</option>
+              </select>
+            </div>
+            <div class="flex items-end">
+              <button onclick="generateAIPracticePlan()" id="aiGenBtn" class="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-500/10 transition-all">
+                <i data-lucide="sparkles" class="w-4 h-4"></i> Generate Plan
+              </button>
+            </div>
+          </div>
+
+          <!-- Generated Practice Plan Content Area -->
+          <div class="bg-slate-900/50 p-6 rounded-xl border border-white/5 min-h-[300px]" id="practicePlanOutput">
+            <!-- Simulated Plan Content (beautifully structured, loading state, or full placeholder) -->
+            <div class="text-center py-16 text-slate-400">
+              <i data-lucide="sparkles" class="w-12 h-12 mx-auto text-slate-600 mb-4 animate-bounce"></i>
+              <h3 class="text-base font-bold text-slate-300">Generate a custom Practice Plan</h3>
+              <p class="text-sm max-w-sm mx-auto mt-1">Select your focus area, age level, and format, then let the Team FC AI compile your session structure.</p>
+            </div>
+          </div>
+
+          <!-- Saved Drills Section -->
+          <div class="mt-8 pt-6 border-t border-white/10 no-print">
+            <h3 class="text-lg font-bold flex items-center gap-2 text-slate-200 mb-3">
+              <i data-lucide="bookmark-check" class="text-emerald-400 w-5 h-5"></i> Saved Drills Playbook
+            </h3>
+            <div id="savedDrillsContainer" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <!-- Dynamically populated saved drills -->
+              <p class="text-xs text-slate-500 italic col-span-2 text-center py-4">No drills saved yet. Click "Save Drill" on generated plans to keep them here.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: Playbook & Positions Info -->
+      <div id="tab-playbook" class="tab-content space-y-6">
+        <div class="glass-panel p-6">
+          <h2 class="text-2xl font-bold flex items-center gap-2 text-slate-100 mb-2">
+            <i data-lucide="book-open" class="text-emerald-400"></i> The Playbook: Positions 1-11
+          </h2>
+          <p class="text-sm text-slate-400 mb-6">Understand the numbered positions in soccer and what attributes make players excel in their respective roles.</p>
+
+          <!-- Interactive Positions Navigator -->
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <!-- Position Buttons List -->
+            <div class="space-y-2 md:col-span-1 border-r border-white/10 pr-4 max-h-[500px] overflow-y-auto">
+              <button onclick="selectPlaybookPosition(1)" class="playbook-pos-btn w-full text-left px-3 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-between bg-white/5 border border-white/10 text-emerald-400 transition-all">
+                <span>1. Goalkeeper (GK)</span>
+                <i data-lucide="chevron-right" class="w-4 h-4"></i>
+              </button>
+              <button onclick="selectPlaybookPosition(2)" class="playbook-pos-btn w-full text-left px-3 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-between hover:bg-white/5 border border-transparent text-slate-300 transition-all">
+                <span>2. Right Fullback (RB)</span>
+                <i data-lucide="chevron-right" class="w-4 h-4"></i>
+              </button>
+              <button onclick="selectPlaybookPosition(3)" class="playbook-pos-btn w-full text-left px-3 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-between hover:bg-white/5 border border-transparent text-slate-300 transition-all">
+                <span>3. Left Fullback (LB)</span>
+                <i data-lucide="chevron-right" class="w-4 h-4"></i>
+              </button>
+              <button onclick="selectPlaybookPosition(4)" class="playbook-pos-btn w-full text-left px-3 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-between hover:bg-white/5 border border-transparent text-slate-300 transition-all">
+                <span>4. Center Back (CB)</span>
+                <i data-lucide="chevron-right" class="w-4 h-4"></i>
+              </button>
+              <button onclick="selectPlaybookPosition(5)" class="playbook-pos-btn w-full text-left px-3 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-between hover:bg-white/5 border border-transparent text-slate-300 transition-all">
+                <span>5. Defending Midfielder (CDM)</span>
+                <i data-lucide="chevron-right" class="w-4 h-4"></i>
+              </button>
+              <button onclick="selectPlaybookPosition(6)" class="playbook-pos-btn w-full text-left px-3 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-between hover:bg-white/5 border border-transparent text-slate-300 transition-all">
+                <span>6. Central Midfielder (CM)</span>
+                <i data-lucide="chevron-right" class="w-4 h-4"></i>
+              </button>
+              <button onclick="selectPlaybookPosition(7)" class="playbook-pos-btn w-full text-left px-3 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-between hover:bg-white/5 border border-transparent text-slate-300 transition-all">
+                <span>7. Right Winger (RW)</span>
+                <i data-lucide="chevron-right" class="w-4 h-4"></i>
+              </button>
+              <button onclick="selectPlaybookPosition(8)" class="playbook-pos-btn w-full text-left px-3 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-between hover:bg-white/5 border border-transparent text-slate-300 transition-all">
+                <span>8. Box-to-Box Midfielder (CM)</span>
+                <i data-lucide="chevron-right" class="w-4 h-4"></i>
+              </button>
+              <button onclick="selectPlaybookPosition(9)" class="playbook-pos-btn w-full text-left px-3 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-between hover:bg-white/5 border border-transparent text-slate-300 transition-all">
+                <span>9. Striker / Center Forward (ST)</span>
+                <i data-lucide="chevron-right" class="w-4 h-4"></i>
+              </button>
+              <button onclick="selectPlaybookPosition(10)" class="playbook-pos-btn w-full text-left px-3 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-between hover:bg-white/5 border border-transparent text-slate-300 transition-all">
+                <span>10. Attacking Midfielder (CAM)</span>
+                <i data-lucide="chevron-right" class="w-4 h-4"></i>
+              </button>
+              <button onclick="selectPlaybookPosition(11)" class="playbook-pos-btn w-full text-left px-3 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-between hover:bg-white/5 border border-transparent text-slate-300 transition-all">
+                <span>11. Left Winger (LW)</span>
+                <i data-lucide="chevron-right" class="w-4 h-4"></i>
+              </button>
+            </div>
+
+            <!-- Position Attributes Details -->
+            <div class="md:col-span-2 space-y-4" id="playbookDetailContainer">
+              <!-- Default dynamic details are rendered here -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: Team Chat Room -->
+      <div id="tab-chat" class="tab-content space-y-6">
+        <div class="glass-panel p-6 flex flex-col h-[700px]">
+          <div class="flex items-center justify-between border-b border-white/10 pb-4 mb-4">
+            <div>
+              <h2 class="text-xl font-bold flex items-center gap-2 text-slate-100">
+                <i data-lucide="message-square" class="text-emerald-400"></i> Team Chat & Schedule
+              </h2>
+              <p class="text-xs text-slate-400">Real-time discussion with parents and rolling 7-day schedule.</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-ping"></span>
+              <span class="text-xs text-slate-400 font-semibold" id="chatActiveStatus">Local Fallback mode</span>
+            </div>
+          </div>
+
+          <!-- 7-Day Rolling Calendar -->
+          <div class="mb-4 bg-slate-950/40 p-3 rounded-xl border border-white/5">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                <i data-lucide="calendar-days" class="w-3.5 h-3.5 text-indigo-400"></i> 7-Day Team Schedule (Rolling)
+              </h3>
+              <button onclick="openCalendarEventModal()" class="text-[10px] bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-2 py-1 rounded transition-all flex items-center gap-1">
+                <i data-lucide="plus" class="w-3 h-3"></i> Add Practice/Game
+              </button>
+            </div>
+            <div id="rollingCalendarContainer" class="grid grid-cols-2 sm:grid-cols-7 gap-2">
+              <!-- Dynamically populated 7 days -->
+            </div>
+          </div>
+
+          <!-- Chat logs area -->
+          <div id="chatMessages" class="flex-1 overflow-y-auto space-y-4 pr-2 mb-4">
+            <!-- Messages render here -->
+          </div>
+
+          <!-- Chat inputs -->
+          <form id="chatForm" onsubmit="handleSendChatMessage(event)" class="flex gap-2">
+            <input type="text" id="chatSenderName" placeholder="Your Name" class="w-[120px] bg-slate-900 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500" required>
+            <input type="text" id="chatMessageInput" placeholder="Type a message..." class="flex-1 bg-slate-900 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500" required>
+            <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-sm transition-all flex items-center gap-1.5">
+              <span>Send</span> <i data-lucide="send" class="w-3.5 h-3.5"></i>
+            </button>
+          </form>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- MODALS -->
+
+  <!-- Modal: Team / Channel Manager -->
+  <div id="teamModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[100] hidden items-center justify-center p-4">
+    <div class="glass-panel max-w-md w-full p-6 space-y-5">
+      <div class="flex items-center justify-between border-b border-white/10 pb-3">
+        <h3 class="text-lg font-bold text-white flex items-center gap-2">
+          <i data-lucide="users" class="text-indigo-400"></i> Manage Team Channels
+        </h3>
+        <button onclick="closeTeamModal()" class="p-1 hover:bg-white/10 rounded-md transition-all text-slate-400 hover:text-white">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="space-y-4">
+        <!-- Join existing channel -->
+        <div class="bg-white/5 p-4 rounded-xl border border-white/10">
+          <h4 class="text-sm font-semibold text-emerald-400 mb-2">Join a Channel / Team</h4>
+          <div class="flex gap-2">
+            <input type="text" id="joinTeamCode" placeholder="Enter password key..." class="flex-1 bg-slate-950 border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-emerald-500">
+            <button onclick="joinTeamByCode()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-bold transition-all">Join</button>
+          </div>
+        </div>
+
+        <!-- Create new channel -->
+        <div class="bg-white/5 p-4 rounded-xl border border-white/10">
+          <h4 class="text-sm font-semibold text-indigo-400 mb-2">Create New Channel</h4>
+          <div class="space-y-3">
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Team Name</label>
+              <input type="text" id="createTeamName" placeholder="e.g. Blue Thunder FC" class="w-full bg-slate-950 border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-indigo-500">
+            </div>
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Access Password Key</label>
+              <input type="text" id="createTeamKey" placeholder="e.g. btfcup10" class="w-full bg-slate-950 border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-indigo-500">
+            </div>
+            <button onclick="createTeamChannel()" class="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold transition-all">Create Channel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Roster Manager -->
+  <div id="rosterModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[100] hidden items-center justify-center p-4">
+    <div class="glass-panel max-w-lg w-full p-6 space-y-4">
+      <div class="flex items-center justify-between border-b border-white/10 pb-3">
+        <h3 class="text-lg font-bold text-white flex items-center gap-2">
+          <i data-lucide="user-cog" class="text-indigo-400"></i> Manage Team Roster
+        </h3>
+        <button onclick="closeRosterModal()" class="p-1 hover:bg-white/10 rounded-md transition-all text-slate-400 hover:text-white">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Add player input -->
+      <div class="flex gap-2">
+        <input type="number" id="playerJersey" placeholder="Jersey #" class="w-24 bg-slate-900 border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none">
+        <input type="text" id="playerName" placeholder="Player Full Name" class="flex-1 bg-slate-900 border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none">
+        <button onclick="addPlayerToRoster()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-bold transition-all">Add</button>
+      </div>
+
+      <!-- Current Roster Listing inside Modal -->
+      <div class="max-h-[300px] overflow-y-auto bg-slate-950/40 border border-white/5 rounded-lg p-2">
+        <ul id="modalRosterList" class="space-y-1 divide-y divide-white/5 text-sm">
+          <!-- Dynamically populated -->
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Add Game / Schedule -->
+  <div id="addGameModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[100] hidden items-center justify-center p-4">
+    <div class="glass-panel max-w-md w-full p-6 space-y-4">
+      <div class="flex items-center justify-between border-b border-white/10 pb-3">
+        <h3 class="text-lg font-bold text-white flex items-center gap-2">
+          <i data-lucide="calendar" class="text-emerald-400"></i> Add Game to Schedule
+        </h3>
+        <button onclick="closeAddGameModal()" class="p-1 hover:bg-white/10 rounded-md transition-all text-slate-400 hover:text-white">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Opponent Team</label>
+          <input type="text" id="gameOpponent" placeholder="e.g. Wizards FC" class="w-full bg-slate-900 border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none">
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Game Date & Time</label>
+          <input type="datetime-local" id="gameDate" class="w-full bg-slate-900 border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none">
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Field / Location</label>
+          <input type="text" id="gameLocation" placeholder="e.g. Field #4, Rec Complex" class="w-full bg-slate-900 border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none">
+        </div>
+        <button onclick="saveScheduledGame()" class="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-bold transition-all">Save Game</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Record Game Outcome -->
+  <div id="outcomeModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[100] hidden items-center justify-center p-4">
+    <div class="glass-panel max-w-md w-full p-6 space-y-4">
+      <div class="flex items-center justify-between border-b border-white/10 pb-3">
+        <h3 class="text-lg font-bold text-white flex items-center gap-2">
+          <i data-lucide="award" class="text-amber-400"></i> Record Match Outcome
+        </h3>
+        <button onclick="closeOutcomeModal()" class="p-1 hover:bg-white/10 rounded-md transition-all text-slate-400 hover:text-white">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="space-y-3">
+        <input type="hidden" id="outcomeGameId">
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Our Score</label>
+            <input type="number" id="outcomeOurScore" min="0" value="0" class="w-full bg-slate-900 border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none">
+          </div>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Opponent Score</label>
+            <input type="number" id="outcomeOpponentScore" min="0" value="0" class="w-full bg-slate-900 border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none">
+          </div>
+        </div>
+
+        <div class="border-t border-white/5 pt-3">
+          <h4 class="text-xs font-bold text-slate-400 mb-2">Add Goals & Assists</h4>
+          <div class="grid grid-cols-12 gap-2 mb-2">
+            <select id="goalScorer" class="col-span-5 bg-slate-900 border border-white/10 px-2 py-1.5 rounded-lg text-xs text-slate-200 focus:outline-none">
+              <option value="">Scored By</option>
+            </select>
+            <select id="goalAssister" class="col-span-5 bg-slate-900 border border-white/10 px-2 py-1.5 rounded-lg text-xs text-slate-200 focus:outline-none">
+              <option value="">Assisted By</option>
+            </select>
+            <button onclick="addGoalEventRow()" class="col-span-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg flex items-center justify-center">+</button>
+          </div>
+
+          <!-- Goal events listed -->
+          <ul id="outcomeEventsList" class="space-y-1 text-xs max-h-[120px] overflow-y-auto">
+            <!-- Populated on addition -->
+          </ul>
+        </div>
+
+        <button onclick="saveMatchOutcome()" class="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-bold transition-all">Submit Results</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Database Configuration (Supabase Connection) -->
+  <div id="configModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[100] hidden items-center justify-center p-4">
+    <div class="glass-panel max-w-md w-full p-6 space-y-4">
+      <div class="flex items-center justify-between border-b border-white/10 pb-3">
+        <h3 class="text-lg font-bold text-white flex items-center gap-2">
+          <i data-lucide="settings" class="text-slate-400"></i> Supabase Integration
+        </h3>
+        <button onclick="closeConfigModal()" class="p-1 hover:bg-white/10 rounded-md transition-all text-slate-400 hover:text-white">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <p class="text-xs text-slate-400">Provide your own Supabase project credentials to store channels, chat messages, and soccer statistics in real time. Defaults to local sandbox state if empty.</p>
+      
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Supabase URL</label>
+          <input type="text" id="dbUrl" placeholder="https://your-project.supabase.co" class="w-full bg-slate-900 border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none">
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Supabase Anon Key</label>
+          <input type="password" id="dbAnonKey" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." class="w-full bg-slate-900 border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none">
+        </div>
+        <button onclick="saveSupabaseConfig()" class="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold transition-all">Save & Reconnect</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Add Calendar Event (Practice/Game) -->
+  <div id="calendarEventModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[100] hidden items-center justify-center p-4">
+    <div class="glass-panel max-w-md w-full p-6 space-y-4">
+      <div class="flex items-center justify-between border-b border-white/10 pb-3">
+        <h3 class="text-lg font-bold text-white flex items-center gap-2">
+          <i data-lucide="calendar" class="text-indigo-400"></i> Add Team Event
+        </h3>
+        <button onclick="closeCalendarEventModal()" class="p-1 hover:bg-white/10 rounded-md transition-all text-slate-400 hover:text-white">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Event Type</label>
+          <select id="calEventType" class="w-full bg-slate-900 border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none">
+            <option value="practice">Practice</option>
+            <option value="game">Game</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Event Title / Description</label>
+          <input type="text" id="calEventTitle" placeholder="e.g. Scrimmage & Shooting / vs Wizards FC" class="w-full bg-slate-900 border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none">
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Date & Time</label>
+          <input type="datetime-local" id="calEventDate" class="w-full bg-slate-900 border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none">
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Location / Field</label>
+          <input type="text" id="calEventLocation" placeholder="e.g. Field #3, Rec Park" class="w-full bg-slate-900 border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none">
+        </div>
+        <button onclick="saveCalendarEvent()" class="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold transition-all">Add Event</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
