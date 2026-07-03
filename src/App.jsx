@@ -156,8 +156,8 @@ export default function App() {
   const [dbStatus, setDbStatus] = useState('Local Sandbox Mode');
 
   // Core Data State
-  const [teams, setTeams] = useState([]);
-  const [currentTeamId, setCurrentTeamId] = useState('');
+  const [teams, setTeams] = useState([{ id: "default-team", name: "Team FC", joinCode: "12345", badge: "⚽" }]);
+  const [currentTeamId, setCurrentTeamId] = useState('default-team');
   const [roster, setRoster] = useState([]);
   const [games, setGames] = useState([]);
   const [chatMessages, setChatMessages] = useState([]);
@@ -331,7 +331,7 @@ export default function App() {
     if (local) {
       parsed = JSON.parse(local);
     } else {
-      parsed = [{ id: "mock-team-1", name: "Lightning Rec 7s", joinCode: "coach123", badge: "⚡" }];
+      parsed = [{ id: "default-team", name: "Team FC", joinCode: "12345", badge: "⚽" }];
       localStorage.setItem("teamfc_teams", JSON.stringify(parsed));
     }
     setTeams(parsed);
@@ -341,6 +341,14 @@ export default function App() {
       setTeamNameInput(parsed[0].name);
       setTeamBadgeInput(parsed[0].badge || '⚽');
     }
+  };
+
+  const generateDefault20Roster = () => {
+    return Array.from({ length: 20 }, (_, idx) => ({
+      id: `p-${idx + 1}`,
+      name: `Player ${idx + 1}`,
+      jerseyNumber: idx + 1
+    }));
   };
 
   const loadTeamDetails = async (teamId) => {
@@ -353,7 +361,18 @@ export default function App() {
     if (client) {
       try {
         const { data: rosterData } = await client.from('roster').select('*').eq('team_id', teamId);
-        setRoster(rosterData || []);
+        if (!rosterData || rosterData.length === 0) {
+          const default20 = generateDefault20Roster().map(p => ({
+            team_id: teamId,
+            player_name: p.name,
+            jersey_number: p.jerseyNumber
+          }));
+          await client.from('roster').insert(default20);
+          const { data: refetched } = await client.from('roster').select('*').eq('team_id', teamId);
+          setRoster(refetched || []);
+        } else {
+          setRoster(rosterData || []);
+        }
         
         const { data: gamesData } = await client.from('games').select('*, game_events(*)').eq('team_id', teamId);
         setGames(gamesData || []);
@@ -369,28 +388,36 @@ export default function App() {
     setSavedDrills(JSON.parse(localStorage.getItem(`teamfc_drills_${teamId}`)) || []);
     
     if (!client) {
-      const fallbackRoster = JSON.parse(localStorage.getItem(`teamfc_roster_${teamId}`)) || [];
-      if (fallbackRoster.length === 0 && teamId === "mock-team-1") {
-        const defaultRoster = [
-          { id: "p1", name: "Alex Morgan", jerseyNumber: 13 },
-          { id: "p2", name: "Christian Pulisic", jerseyNumber: 10 },
-          { id: "p3", name: "Weston McKennie", jerseyNumber: 8 },
-          { id: "p4", name: "Tyler Adams", jerseyNumber: 4 },
-          { id: "p5", name: "Antonee Robinson", jerseyNumber: 3 },
-          { id: "p6", name: "Matt Turner", jerseyNumber: 1 },
-          { id: "p7", name: "Folarin Balogun", jerseyNumber: 9 },
-          { id: "p8", name: "Yunus Musah", jerseyNumber: 6 },
-          { id: "p9", name: "Gio Reyna", jerseyNumber: 7 },
-          { id: "p10", name: "Sergino Dest", jerseyNumber: 2 }
-        ];
-        localStorage.setItem(`teamfc_roster_${teamId}`, JSON.stringify(defaultRoster));
-        setRoster(defaultRoster);
-      } else {
-        setRoster(fallbackRoster);
+      let fallbackRoster = JSON.parse(localStorage.getItem(`teamfc_roster_${teamId}`)) || [];
+      if (fallbackRoster.length === 0) {
+        fallbackRoster = generateDefault20Roster();
+        localStorage.setItem(`teamfc_roster_${teamId}`, JSON.stringify(fallbackRoster));
       }
+      setRoster(fallbackRoster);
 
       setGames(JSON.parse(localStorage.getItem(`teamfc_games_${teamId}`)) || []);
       setChatMessages(JSON.parse(localStorage.getItem(`teamfc_chat_${teamId}`)) || []);
+    }
+  };
+
+  const handleUpdatePlayerField = async (playerId, fieldName, value) => {
+    const nextRoster = roster.map(p => {
+      if (p.id === playerId) {
+        return { ...p, [fieldName]: value };
+      }
+      return p;
+    });
+    setRoster(nextRoster);
+    
+    if (client) {
+      try {
+        const dbField = fieldName === 'name' ? 'player_name' : 'jersey_number';
+        await client.from('roster').update({ [dbField]: value }).eq('id', playerId);
+      } catch (err) {
+        console.error(err);
+      }
+    } else {
+      localStorage.setItem(`teamfc_roster_${currentTeamId}`, JSON.stringify(nextRoster));
     }
   };
 
@@ -1225,8 +1252,22 @@ export default function App() {
                     ) : (
                       rosterStats.map(p => (
                         <tr key={p.id} className="border-b border-white/5 hover:bg-white/5 transition-all">
-                          <td className="py-2.5 px-3 font-semibold text-indigo-400">#{p.jerseyNumber}</td>
-                          <td className="py-2.5 px-3 font-bold text-slate-200">{p.name}</td>
+                          <td className="py-1 px-3">
+                            <input
+                              type="number"
+                              value={p.jerseyNumber}
+                              onChange={(e) => handleUpdatePlayerField(p.id, 'jerseyNumber', parseInt(e.target.value) || 0)}
+                              className="w-16 bg-transparent text-indigo-400 font-semibold focus:bg-slate-900 border border-transparent focus:border-indigo-500 rounded px-1.5 py-0.5 focus:outline-none"
+                            />
+                          </td>
+                          <td className="py-1 px-3">
+                            <input
+                              type="text"
+                              value={p.name}
+                              onChange={(e) => handleUpdatePlayerField(p.id, 'name', e.target.value)}
+                              className="w-full bg-transparent text-slate-200 font-bold focus:bg-slate-900 border border-transparent focus:border-indigo-500 rounded px-1.5 py-0.5 focus:outline-none"
+                            />
+                          </td>
                           <td className="py-2.5 px-3 text-center font-bold text-emerald-400">{p.goals}</td>
                           <td className="py-2.5 px-3 text-center font-bold text-cyan-400">{p.assists}</td>
                           <td className="py-2.5 px-3 text-center font-black text-white">{p.points}</td>
