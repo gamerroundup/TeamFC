@@ -1508,7 +1508,7 @@ export default function App() {
                           draggable
                           onDragStart={(e) => handleDragStart(e, String(idx))}
                           onTouchMove={(e) => handleTouchMove(e, String(idx))}
-                          onDragOver={(e) => e.preventDefault()}
+                          onDragOver={(e) => e.preventDefa
                           onClick={() => setActiveSlotSelector(idx)}
                           style={{
                             position: 'absolute',
@@ -1533,7 +1533,7 @@ export default function App() {
                                 ✕
                               </button>
                             )}
-                          </div>
+                          
 
                           {/* Manual Quick selector popup (critical for mobile/tablet where drag/drop fails) */}
                           {activeSlotSelector === idx && (
