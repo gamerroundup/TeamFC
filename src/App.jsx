@@ -1073,6 +1073,15 @@ export default function App() {
     localStorage.removeItem(`teamfc_assignments_${currentTeamId}`);
   };
 
+  const handleHalfTimeResetAll = () => {
+    setGameRunning(false);
+    setGameTime(0);
+    setSub1Running(false);
+    setSub1Time(0);
+    setSub2Running(false);
+    setSub2Time(0);
+  };
+
   // --- Assign Player to Field Slot (Up to 20 players roster assignment support) ---
   const assignPlayerToSlot = (playerId, slotIdx) => {
     const nextAss = { ...positionAssignments };
@@ -1361,214 +1370,255 @@ export default function App() {
 
         {/* VIEW: Tactical Board */}
         {activeTab === 'tactical' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start animate-[fadeIn_0.3s_ease-out]">
-            {/* Field */}
-            <div className="lg:col-span-8 glass-panel p-6">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
-                <div>
-                  <h2 className="text-2xl font-bold text-slate-100 font-heading">Tactical Board</h2>
-                  <p className="text-sm text-slate-400">Drag roster players onto the board slots. Drag circles to change positioning.</p>
+          <div className="space-y-6 animate-[fadeIn_0.3s_ease-out] w-full">
+            {/* Playtime & Sub Timers Card (above board) */}
+            <div className="glass-panel p-6">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4 border-b border-white/10 pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">⏱️</span>
+                  <h3 className="text-lg font-bold text-slate-200">Playtime & Sub Timers</h3>
                 </div>
-                <div className="flex items-center gap-3">
-                  <button onClick={handleResetBoard} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-lg border border-white/5">
-                    Reset Board
-                  </button>
-                  <select value={tacticalFormat} onChange={(e) => { setTacticalFormat(e.target.value); handleResetBoard(); }} className="bg-slate-900 border border-white/10 px-3 py-1.5 rounded-lg text-sm text-white focus:outline-none cursor-pointer">
-                    <option value="6v6">6v6 Formations</option>
-                    <option value="7v7">7v7 Formations</option>
-                    <option value="8v8">8v8 Formations</option>
-                    <option value="9v9">9v9 Formations</option>
-                    <option value="11v11">11v11 Formations</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Soccer field */}
-              <div 
-                id="tacticalSoccerField" 
-                onDragOver={(e) => e.preventDefault()} 
-                onDrop={handleDrop} 
-                className="soccer-field relative w-full rounded-lg"
-              >
-                <div className="soccer-field-center-circle"></div>
-                <div className="soccer-field-center-spot"></div>
-                <div className="soccer-field-penalty-area-left"></div>
-                <div className="soccer-field-penalty-area-right"></div>
-                <div className="soccer-field-goal-area-left"></div>
-                <div className="soccer-field-goal-area-right"></div>
-                <div className="soccer-field-penalty-spot-left"></div>
-                <div className="soccer-field-penalty-spot-right"></div>
-                
-                {/* Soccer ball */}
-                <div 
-                  id="ball" 
-                  draggable 
-                  onDragStart={(e) => handleDragStart(e, 'ball')}
-                  onTouchMove={(e) => handleTouchMove(e, 'ball')}
-                  style={{
-                    position: 'absolute',
-                    left: `${ballPosition.left}%`,
-                    top: `${ballPosition.top}%`,
-                    transform: 'translate(-50%, -50%)',
-                    touchAction: 'none'
-                  }}
-                  className="w-8 h-8 bg-white border-2 border-slate-900 rounded-full flex items-center justify-center text-sm shadow-lg cursor-grab z-30 select-none"
+                <button 
+                  onClick={handleHalfTimeResetAll} 
+                  className="px-4 py-1.5 bg-white text-slate-900 hover:bg-slate-100 text-xs font-bold rounded-lg transition-all shadow"
                 >
-                  ⚽
-                </div>
-
-                {/* Active Players - Renders based on selection */}
-                {FORMATIONS[tacticalFormat].map((pos, idx) => {
-                  const assignedPlayerId = positionAssignments[idx];
-                  const assigned = roster.find(p => p.id === assignedPlayerId);
-                  
-                  const nameLabel = assigned ? assigned.name : `Empty ${pos.label}`;
-                  const custom = customPositions[idx];
-                  const left = custom ? custom.left : pos.left;
-                  const top = custom ? custom.top : pos.top;
-                  
-                  return (
-                    <div
-                      key={idx}
-                      id={String(idx)}
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, String(idx))}
-                      onTouchMove={(e) => handleTouchMove(e, String(idx))}
-                      onDragOver={(e) => e.preventDefault()}
-                      onClick={() => setActiveSlotSelector(idx)}
-                      style={{
-                        position: 'absolute',
-                        left: `${left}%`,
-                        top: `${top}%`,
-                        transform: 'translate(-50%, -50%)',
-                        touchAction: 'none'
-                      }}
-                      className={`tactical-player z-20 cursor-pointer transition-all ${assigned ? 'border-emerald-400 bg-emerald-500/20' : 'border-dashed border-white/20 bg-black/40'}`}
-                    >
-                      <span>{assigned ? assigned.jerseyNumber : pos.label}</span>
-                      <div className="tactical-player-label flex items-center gap-1">
-                        <span>{nameLabel}</span>
-                        {assigned && (
-                          <button 
-                            onClick={(e) => { 
-                              e.stopPropagation(); 
-                              unassignPlayerFromSlot(idx); 
-                            }} 
-                            className="text-[9px] bg-red-600/80 hover:bg-red-700 text-white rounded-full w-3.5 h-3.5 flex items-center justify-center font-bold no-print"
-                          >
-                            ✕
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Manual Quick selector popup (critical for mobile/tablet where drag/drop fails) */}
-                      {activeSlotSelector === idx && (
-                        <div className="absolute top-12 left-1/2 -translate-x-1/2 bg-slate-950/95 border border-white/25 p-2 rounded-xl z-50 w-44 shadow-2xl space-y-1 text-xs">
-                          <div className="flex justify-between items-center border-b border-white/10 pb-1 mb-1 text-[10px] text-slate-400">
-                            <span>Select Player</span>
-                            <button onClick={(e) => { e.stopPropagation(); setActiveSlotSelector(null); }} className="text-white">✕</button>
-                          </div>
-                          <div className="max-h-36 overflow-y-auto space-y-0.5">
-                            {benchPlayers.length === 0 ? (
-                              <div className="text-[10px] italic text-slate-500 text-center py-2">No bench players</div>
-                            ) : (
-                              benchPlayers.map(bp => (
-                                <button
-                                  key={bp.id}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    assignPlayerToSlot(bp.id, idx);
-                                  }}
-                                  className="w-full text-left px-2 py-1 hover:bg-white/10 rounded text-slate-200"
-                                >
-                                  #{bp.jerseyNumber} {bp.name}
-                                </button>
-                              ))
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                  Half-Time Reset (All)
+                </button>
               </div>
-
-              {/* Bench (Coaches can drag/drop any of the 20 players on roster from here to the board slots) */}
-              <div className="mt-6 bg-slate-900/50 p-4 rounded-xl border border-white/5">
-                <div className="flex justify-between items-center mb-2">
-                  <h4 className="text-sm font-bold text-slate-300">Reserve / Bench Players ({benchPlayers.length})</h4>
-                  <span className="text-[10px] text-slate-400">Drag card onto a field circle above or click a circle to assign</span>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Starters Line */}
+                <div className={`bg-slate-950/40 p-4 border-t-4 border-emerald-500 rounded-xl flex flex-col items-center relative ${gameRunning ? 'timer-running' : ''}`} id="gameTimerCard">
+                  <span className="absolute top-2 left-3 text-[10px] text-slate-400 font-bold uppercase">• Starters Line</span>
+                  <span className="text-3xl font-black text-slate-100 font-mono tracking-widest mt-4 mb-4">{formatTime(gameTime)}</span>
+                  <div className="flex gap-2 w-full">
+                    <button onClick={() => setGameRunning(!gameRunning)} className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition-all">
+                      {gameRunning ? 'Pause' : 'Start'}
+                    </button>
+                    <button onClick={() => { setGameRunning(false); setGameTime(0); }} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-lg border border-white/5">
+                      ↻
+                    </button>
+                  </div>
                 </div>
-                <div className="flex flex-wrap gap-3 min-h-[60px] p-2 bg-slate-950/40 border border-dashed border-white/10 rounded-lg items-center">
-                  {benchPlayers.length === 0 ? (
-                    <p className="text-xs text-slate-500 italic w-full text-center py-2">No players on the bench. Add players to roster or remove some from field.</p>
-                  ) : (
-                    benchPlayers.map(p => (
-                      <div
-                        key={p.id}
-                        id={`bench-${p.id}`}
-                        draggable
-                        onDragStart={(e) => {
-                          e.dataTransfer.setData("playerId", p.id);
-                          setDraggedElementId(`bench-${p.id}`);
-                        }}
-                        className="tactical-player relative cursor-grab bg-slate-900 border border-indigo-500/20 active:cursor-grabbing hover:border-indigo-400"
-                      >
-                        <span>{p.jerseyNumber}</span>
-                        <div className="tactical-player-label">{p.name}</div>
-                      </div>
-                    ))
-                  )}
+
+                {/* Sub Line 1 */}
+                <div className={`bg-slate-950/40 p-4 border-t-4 border-emerald-500 rounded-xl flex flex-col items-center relative ${sub1Running ? 'timer-running-indigo' : ''}`} id="sub1TimerCard">
+                  <span className="absolute top-2 left-3 text-[10px] text-slate-400 font-bold uppercase">• Sub Line 1</span>
+                  <span className="text-3xl font-black text-slate-100 font-mono tracking-widest mt-4 mb-4">{formatTime(sub1Time)}</span>
+                  <div className="flex gap-2 w-full">
+                    <button onClick={() => setSub1Running(!sub1Running)} className="flex-1 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-all">
+                      {sub1Running ? 'Pause' : 'Start'}
+                    </button>
+                    <button onClick={() => { setSub1Running(false); setSub1Time(0); }} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-lg border border-white/5">
+                      ↻
+                    </button>
+                  </div>
+                </div>
+
+                {/* Sub Line 2 */}
+                <div className={`bg-slate-950/40 p-4 border-t-4 border-indigo-400 rounded-xl flex flex-col items-center relative ${sub2Running ? 'timer-running-indigo' : ''}`} id="sub2TimerCard">
+                  <span className="absolute top-2 left-3 text-[10px] text-slate-400 font-bold uppercase">• Sub Line 2</span>
+                  <span className="text-3xl font-black text-slate-100 font-mono tracking-widest mt-4 mb-4">{formatTime(sub2Time)}</span>
+                  <div className="flex gap-2 w-full">
+                    <button onClick={() => setSub2Running(!sub2Running)} className="flex-1 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-all">
+                      {sub2Running ? 'Pause' : 'Start'}
+                    </button>
+                    <button onClick={() => { setSub2Running(false); setSub2Time(0); }} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-lg border border-white/5">
+                      ↻
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Timers Column */}
-            <div className="lg:col-span-4 glass-panel p-6 space-y-5">
-              <h3 className="text-lg font-bold text-slate-200 border-b border-white/10 pb-2">3-Timer Rotation Dashboard</h3>
-              
-              {/* Game timer */}
-              <div className={`bg-slate-950/40 p-4 border border-white/10 rounded-xl flex flex-col items-center relative ${gameRunning ? 'timer-running' : ''}`} id="gameTimerCard">
-                <span className="absolute top-2 left-2 text-[9px] bg-emerald-500/20 text-emerald-400 px-1 py-0.5 rounded font-black">Game Clock</span>
-                <span className="text-3xl font-black text-slate-100 font-mono tracking-widest mt-2">{formatTime(gameTime)}</span>
-                <span className="text-[9px] text-slate-500 mt-1 mb-3">Target Max: 55:00</span>
-                <div className="flex gap-2 w-full">
-                  <button onClick={() => setGameRunning(!gameRunning)} className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition-all">
-                    {gameRunning ? 'Pause' : 'Start'}
-                  </button>
-                  <button onClick={() => { setGameRunning(false); setGameTime(0); }} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-lg border border-white/5">
-                    Reset
-                  </button>
+            {/* Tactical Board and Edit Names container */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              {/* Field Column */}
+              <div className="lg:col-span-5 xl:col-span-5 glass-panel p-4 flex flex-col items-center">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-4 w-full px-2">
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-100 font-heading">Tactical Board</h2>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={handleResetBoard} className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold rounded border border-white/5">
+                      Reset
+                    </button>
+                    <select value={tacticalFormat} onChange={(e) => { setTacticalFormat(e.target.value); handleResetBoard(); }} className="bg-slate-900 border border-white/10 px-2 py-1 rounded text-[11px] text-white focus:outline-none cursor-pointer">
+                      <option value="6v6">6v6 Formations</option>
+                      <option value="7v7">7v7 Formations</option>
+                      <option value="8v8">8v8 Formations</option>
+                      <option value="9v9">9v9 Formations</option>
+                      <option value="11v11">11v11 Formations</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Soccer field container */}
+                <div className="relative w-full max-w-[360px] mx-auto">
+                  <div 
+                    id="tacticalSoccerField" 
+                    onDragOver={(e) => e.preventDefault()} 
+                    onDrop={handleDrop} 
+                    className="soccer-field relative w-full rounded-lg"
+                    style={{ paddingBottom: '90px' }}
+                  >
+                    <div className="soccer-field-center-circle"></div>
+                    <div className="soccer-field-center-spot"></div>
+                    <div className="soccer-field-penalty-area-top"></div>
+                    <div className="soccer-field-penalty-area-bottom"></div>
+                    <div className="soccer-field-goal-area-top"></div>
+                    <div className="soccer-field-goal-area-bottom"></div>
+                    <div className="soccer-field-penalty-spot-top"></div>
+                    <div className="soccer-field-penalty-spot-bottom"></div>
+                    
+                    {/* Soccer ball */}
+                    <div 
+                      id="ball" 
+                      draggable 
+                      onDragStart={(e) => handleDragStart(e, 'ball')}
+                      onTouchMove={(e) => handleTouchMove(e, 'ball')}
+                      style={{
+                        position: 'absolute',
+                        left: `${ballPosition.left}%`,
+                        top: `${ballPosition.top * 0.85}%`, // adjust bound slightly since substitutes occupies bottom portion
+                        transform: 'translate(-50%, -50%)',
+                        touchAction: 'none'
+                      }}
+                      className="w-7 h-7 bg-white border-2 border-slate-900 rounded-full flex items-center justify-center text-xs shadow-lg cursor-grab z-30 select-none"
+                    >
+                      ⚽
+                    </div>
+
+                    {/* Active Players - Renders based on selection */}
+                    {FORMATIONS[tacticalFormat].map((pos, idx) => {
+                      const assignedPlayerId = positionAssignments[idx];
+                      const assigned = roster.find(p => p.id === assignedPlayerId);
+                      
+                      const nameLabel = assigned ? assigned.name : `Empty ${pos.label}`;
+                      const custom = customPositions[idx];
+                      const left = custom ? custom.left : pos.left;
+                      // Compress top coordinates to leave space for bottom substitutes section
+                      const topRaw = custom ? custom.top : pos.top;
+                      const top = topRaw * 0.85; 
+                      
+                      return (
+                        <div
+                          key={idx}
+                          id={String(idx)}
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, String(idx))}
+                          onTouchMove={(e) => handleTouchMove(e, String(idx))}
+                          onDragOver={(e) => e.preventDefault()}
+                          onClick={() => setActiveSlotSelector(idx)}
+                          style={{
+                            position: 'absolute',
+                            left: `${left}%`,
+                            top: `${top}%`,
+                            transform: 'translate(-50%, -50%)',
+                            touchAction: 'none'
+                          }}
+                          className={`tactical-player z-20 cursor-pointer transition-all ${assigned ? 'border-emerald-400 bg-emerald-500/20' : 'border-dashed border-white/20 bg-black/40'}`}
+                        >
+                          <span>{assigned ? assigned.jerseyNumber : pos.label}</span>
+                          <div className="tactical-player-label flex items-center gap-1">
+                            <span>{nameLabel}</span>
+                            {assigned && (
+                              <button 
+                                onClick={(e) => { 
+                                  e.stopPropagation(); 
+                                  unassignPlayerFromSlot(idx); 
+                                }} 
+                                className="text-[9px] bg-red-600/80 hover:bg-red-700 text-white rounded-full w-3.5 h-3.5 flex items-center justify-center font-bold no-print"
+                              >
+                                ✕
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Manual Quick selector popup (critical for mobile/tablet where drag/drop fails) */}
+                          {activeSlotSelector === idx && (
+                            <div className="absolute top-12 left-1/2 -translate-x-1/2 bg-slate-950/95 border border-white/25 p-2 rounded-xl z-50 w-44 shadow-2xl space-y-1 text-xs">
+                              <div className="flex justify-between items-center border-b border-white/10 pb-1 mb-1 text-[10px] text-slate-400">
+                                <span>Select Player</span>
+                                <button onClick={(e) => { e.stopPropagation(); setActiveSlotSelector(null); }} className="text-white">✕</button>
+                              </div>
+                              <div className="max-h-36 overflow-y-auto space-y-0.5">
+                                {benchPlayers.length === 0 ? (
+                                  <div className="text-[10px] italic text-slate-500 text-center py-2">No bench players</div>
+                                ) : (
+                                  benchPlayers.map(bp => (
+                                    <button
+                                      key={bp.id}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        assignPlayerToSlot(bp.id, idx);
+                                      }}
+                                      className="w-full text-left px-2 py-1 hover:bg-white/10 rounded text-slate-200"
+                                    >
+                                      #{bp.jerseyNumber} {bp.name}
+                                    </button>
+                                  ))
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+
+                    {/* Integrated Substitutes Panel inside field at the bottom */}
+                    <div className="absolute bottom-0 left-0 right-0 bg-slate-950/85 border-t-2 border-dashed border-white/20 p-2 z-30 flex flex-col items-center">
+                      <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest mb-1.5">SUBSTITUTES</span>
+                      <div className="flex flex-row gap-3 overflow-x-auto w-full justify-start sm:justify-center px-2 py-1 scrollbar-thin">
+                        {benchPlayers.length === 0 ? (
+                          <p className="text-[10px] text-slate-500 italic py-2">No bench players</p>
+                        ) : (
+                          benchPlayers.map(p => (
+                            <div
+                              key={p.id}
+                              id={`bench-${p.id}`}
+                              draggable
+                              onDragStart={(e) => {
+                                e.dataTransfer.setData("playerId", p.id);
+                                setDraggedElementId(`bench-${p.id}`);
+                              }}
+                              className="flex flex-col items-center gap-1 cursor-grab active:cursor-grabbing shrink-0"
+                            >
+                              <div className="w-8 h-8 bg-indigo-600 border border-white rounded-full flex items-center justify-center text-xs font-black text-white shadow-md">
+                                {p.jerseyNumber}
+                              </div>
+                              <div className="bg-black/90 text-white text-[8px] font-bold px-1.5 py-0.5 rounded shadow whitespace-nowrap max-w-[64px] truncate">
+                                {p.name}
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {/* Sub 1 */}
-              <div className={`bg-slate-950/40 p-4 border border-white/10 rounded-xl flex flex-col items-center relative ${sub1Running ? 'timer-running-indigo' : ''}`} id="sub1TimerCard">
-                <span className="absolute top-2 left-2 text-[9px] bg-indigo-500/20 text-indigo-400 px-1 py-0.5 rounded font-black">Sub Rotation 1</span>
-                <span className="text-2xl font-black text-slate-100 font-mono tracking-widest mt-2">{formatTime(sub1Time)}</span>
-                <span className="text-[9px] text-slate-500 mt-1 mb-3">Shift Monitor</span>
-                <div className="flex gap-2 w-full">
-                  <button onClick={() => setSub1Running(!sub1Running)} className="flex-1 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-all">
-                    {sub1Running ? 'Pause' : 'Start'}
-                  </button>
-                  <button onClick={() => { setSub1Running(false); setSub1Time(0); }} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-lg border border-white/5">
-                    Reset
-                  </button>
+              {/* Edit Player Names Column */}
+              <div className="lg:col-span-7 xl:col-span-7 glass-panel p-6">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xl">👤</span>
+                  <h3 className="text-lg font-bold text-slate-200">Edit Player Names</h3>
                 </div>
-              </div>
-
-              {/* Sub 2 */}
-              <div className={`bg-slate-950/40 p-4 border border-white/10 rounded-xl flex flex-col items-center relative ${sub2Running ? 'timer-running-indigo' : ''}`} id="sub2TimerCard">
-                <span className="absolute top-2 left-2 text-[9px] bg-indigo-500/20 text-indigo-400 px-1 py-0.5 rounded font-black">Sub Rotation 2</span>
-                <span className="text-2xl font-black text-slate-100 font-mono tracking-widest mt-2">{formatTime(sub2Time)}</span>
-                <span className="text-[9px] text-slate-500 mt-1 mb-3">Shift Monitor</span>
-                <div className="flex gap-2 w-full">
-                  <button onClick={() => setSub2Running(!sub2Running)} className="flex-1 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-all">
-                    {sub2Running ? 'Pause' : 'Start'}
-                  </button>
-                  <button onClick={() => { setSub2Running(false); setSub2Time(0); }} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-lg border border-white/5">
-                    Reset
-                  </button>
+                <p className="text-xs text-slate-400 mb-4">Names entered below will sync automatically with the field tokens.</p>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[500px] overflow-y-auto pr-1">
+                  {roster.map((p, index) => (
+                    <div key={p.id} className="flex items-center bg-slate-950/40 border border-white/5 rounded-lg px-3 py-1.5 gap-2">
+                      <span className="text-xs font-bold text-emerald-400 w-5">{p.jerseyNumber || index + 1}</span>
+                      <input
+                        type="text"
+                        value={p.name}
+                        onChange={(e) => handleUpdatePlayerField(p.id, 'name', e.target.value)}
+                        className="flex-1 bg-transparent text-slate-200 font-bold focus:bg-slate-900 border border-transparent focus:border-indigo-500 rounded px-1.5 py-0.5 focus:outline-none text-sm"
+                      />
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
@@ -1711,6 +1761,42 @@ export default function App() {
         {/* VIEW: Playbook & AI Coaching Assistant Chatbot */}
         {activeTab === 'playbook' && (
           <div className="space-y-6 animate-[fadeIn_0.3s_ease-out]">
+            {/* AI COACHING QUESTION BOX */}
+            <div className="glass-panel p-6">
+              <h3 className="text-lg font-bold text-slate-200 mb-2 flex items-center gap-2">
+                <span>🤖</span> Ask the Team FC AI Coach
+              </h3>
+              <p className="text-xs text-slate-400 mb-4">Ask any soccer rule, coaching strategy, or tactical question (e.g. "What is offsides?", "How to play a 2-3-1?").</p>
+              
+              <form onSubmit={handleAskAICoach} className="flex gap-2">
+                <input 
+                  type="text" 
+                  value={aiQuestion}
+                  onChange={(e) => setAiQuestion(e.target.value)}
+                  placeholder="Ask a rule, tactical question, or drill advice..." 
+                  className="flex-1 bg-slate-900 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500" 
+                />
+                <button 
+                  type="submit" 
+                  disabled={aiThinking}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-sm"
+                >
+                  {aiThinking ? 'Thinking...' : 'Ask AI'}
+                </button>
+              </form>
+
+              {aiAnswer && (
+                <div className="mt-4 bg-slate-900/80 p-4 rounded-xl border border-white/5 animate-[fadeIn_0.2s_ease-out]">
+                  <div className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <span>💡</span> Coach AI Advisor:
+                  </div>
+                  <div className="text-xs text-slate-200 leading-relaxed whitespace-pre-wrap">
+                    {aiAnswer}
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Playbook explanations */}
             <div className="glass-panel p-6">
               <h2 className="text-2xl font-bold text-slate-100 font-heading mb-2">The Playbook: Positions 1-11</h2>
@@ -1760,42 +1846,6 @@ export default function App() {
                   </div>
                 </div>
               </div>
-            </div>
-
-            {/* AI COACHING QUESTION BOX */}
-            <div className="glass-panel p-6">
-              <h3 className="text-lg font-bold text-slate-200 mb-2 flex items-center gap-2">
-                <span>🤖</span> Ask the Team FC AI Coach
-              </h3>
-              <p className="text-xs text-slate-400 mb-4">Ask any soccer rule, coaching strategy, or tactical question (e.g. "What is offsides?", "How to play a 2-3-1?").</p>
-              
-              <form onSubmit={handleAskAICoach} className="flex gap-2">
-                <input 
-                  type="text" 
-                  value={aiQuestion}
-                  onChange={(e) => setAiQuestion(e.target.value)}
-                  placeholder="Ask a rule, tactical question, or drill advice..." 
-                  className="flex-1 bg-slate-900 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500" 
-                />
-                <button 
-                  type="submit" 
-                  disabled={aiThinking}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-sm"
-                >
-                  {aiThinking ? 'Thinking...' : 'Ask AI'}
-                </button>
-              </form>
-
-              {aiAnswer && (
-                <div className="mt-4 bg-slate-900/80 p-4 rounded-xl border border-white/5 animate-[fadeIn_0.2s_ease-out]">
-                  <div className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                    <span>💡</span> Coach AI Advisor:
-                  </div>
-                  <div className="text-xs text-slate-200 leading-relaxed whitespace-pre-wrap">
-                    {aiAnswer}
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         )}
