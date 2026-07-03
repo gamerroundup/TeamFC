@@ -126,7 +126,6 @@ const FORMATIONS = {
   ]
 };
 
-// --- PRE-DESIGNED TEAM BADGES ---
 const BADGES = [
   { char: "⚽", name: "Classic Soccer" },
   { char: "⚡", name: "Lightning FC" },
@@ -153,6 +152,7 @@ export default function App() {
   // Database Connection Config
   const [dbUrl, setDbUrl] = useState('');
   const [dbAnonKey, setDbAnonKey] = useState('');
+  const [geminiApiKey, setGeminiApiKey] = useState('');
   const [dbStatus, setDbStatus] = useState('Local Sandbox Mode');
 
   // Core Data State
@@ -164,7 +164,7 @@ export default function App() {
   const [calendarEvents, setCalendarEvents] = useState([]);
   const [savedDrills, setSavedDrills] = useState([]);
 
-  // Active Team Customization State (renaming & badge selector)
+  // Active Team Customization State
   const [teamNameInput, setTeamNameInput] = useState('');
   const [teamBadgeInput, setTeamBadgeInput] = useState('⚽');
 
@@ -219,10 +219,11 @@ export default function App() {
   const [tacticalFormat, setTacticalFormat] = useState('7v7');
   const [draggedElementId, setDraggedElementId] = useState(null);
   const [customPositions, setCustomPositions] = useState({});
-  
-  // Unified React state-based lineup coordinates (resolves old ghost duplicates during drag)
-  const [tacticalLineup, setTacticalLineup] = useState([]);
   const [ballPosition, setBallPosition] = useState({ left: 50, top: 50 });
+
+  // Roster Lineup Position Assignment State (Allows dragging up to 20 players on/off field)
+  const [positionAssignments, setPositionAssignments] = useState({});
+  const [activeSlotSelector, setActiveSlotSelector] = useState(null); // Mobile dropdown quick-select fallback
 
   const chatEndRef = useRef(null);
   const [chatSender, setChatSender] = useState('');
@@ -235,6 +236,7 @@ export default function App() {
       const parsed = JSON.parse(savedConf);
       setDbUrl(parsed.url || '');
       setDbAnonKey(parsed.anonKey || '');
+      setGeminiApiKey(parsed.geminiApiKey || '');
     }
     loadTeams();
   }, []);
@@ -245,6 +247,9 @@ export default function App() {
       loadTeamDetails(currentTeamId);
       const savedPositions = JSON.parse(localStorage.getItem(`teamfc_positions_${currentTeamId}`)) || {};
       setCustomPositions(savedPositions);
+      
+      const savedAssignments = JSON.parse(localStorage.getItem(`teamfc_assignments_${currentTeamId}`)) || {};
+      setPositionAssignments(savedAssignments);
     }
   }, [currentTeamId, dbUrl, dbAnonKey]);
 
@@ -255,7 +260,7 @@ export default function App() {
     }
   }, [chatMessages]);
 
-  // --- Concurrently Running Timers (useEffect intervals) ---
+  // --- Concurrently Running Timers ---
   useEffect(() => {
     let interval = null;
     if (gameRunning) {
@@ -347,15 +352,12 @@ export default function App() {
 
     if (client) {
       try {
-        // Load roster
         const { data: rosterData } = await client.from('roster').select('*').eq('team_id', teamId);
         setRoster(rosterData || []);
         
-        // Load games
         const { data: gamesData } = await client.from('games').select('*, game_events(*)').eq('team_id', teamId);
         setGames(gamesData || []);
         
-        // Load chat
         const { data: chatData } = await client.from('chat_messages').select('*').eq('team_id', teamId).order('created_at', { ascending: true });
         setChatMessages(chatData || []);
       } catch (err) {
@@ -363,11 +365,9 @@ export default function App() {
       }
     }
 
-    // Always load local-only stores (calendar, drills)
     setCalendarEvents(JSON.parse(localStorage.getItem(`teamfc_cal_${teamId}`)) || []);
     setSavedDrills(JSON.parse(localStorage.getItem(`teamfc_drills_${teamId}`)) || []);
     
-    // Load local roster/games fallback if not connected to supabase
     if (!client) {
       const fallbackRoster = JSON.parse(localStorage.getItem(`teamfc_roster_${teamId}`)) || [];
       if (fallbackRoster.length === 0 && teamId === "mock-team-1") {
@@ -378,7 +378,10 @@ export default function App() {
           { id: "p4", name: "Tyler Adams", jerseyNumber: 4 },
           { id: "p5", name: "Antonee Robinson", jerseyNumber: 3 },
           { id: "p6", name: "Matt Turner", jerseyNumber: 1 },
-          { id: "p7", name: "Folarin Balogun", jerseyNumber: 9 }
+          { id: "p7", name: "Folarin Balogun", jerseyNumber: 9 },
+          { id: "p8", name: "Yunus Musah", jerseyNumber: 6 },
+          { id: "p9", name: "Gio Reyna", jerseyNumber: 7 },
+          { id: "p10", name: "Sergino Dest", jerseyNumber: 2 }
         ];
         localStorage.setItem(`teamfc_roster_${teamId}`, JSON.stringify(defaultRoster));
         setRoster(defaultRoster);
@@ -391,7 +394,7 @@ export default function App() {
     }
   };
 
-  // --- Team Settings Change (Name & Photo Badge) ---
+  // --- Team Settings Change ---
   const handleSaveTeamSettings = async () => {
     if (!teamNameInput) return;
     
@@ -506,6 +509,14 @@ export default function App() {
       const updated = roster.filter(p => p.id !== id);
       setRoster(updated);
       localStorage.setItem(`teamfc_roster_${currentTeamId}`, JSON.stringify(updated));
+      
+      // Clear position assignment if they were on the field
+      const nextAss = { ...positionAssignments };
+      Object.keys(nextAss).forEach(k => {
+        if (nextAss[k] === id) delete nextAss[k];
+      });
+      setPositionAssignments(nextAss);
+      localStorage.setItem(`teamfc_assignments_${currentTeamId}`, JSON.stringify(nextAss));
     }
   };
 
@@ -662,114 +673,230 @@ export default function App() {
     setShowCalEventModal(false);
   };
 
-  // --- DYNAMIC AI PRACTICE PLAN GENERATOR (Ensures Fresh Drills Every Click) ---
-  const handleGenerateAI = () => {
+  // --- DYNAMIC AI PRACTICE PLAN GENERATOR (Real Gemini + Premium Randomized Fallback) ---
+  const handleGenerateAI = async () => {
     setAiGenerating(true);
     
+    // Attempt Live Google Gemini Generation if API key is provided
+    if (geminiApiKey) {
+      try {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{
+                text: `You are an elite youth soccer coaching director. Generate a highly detailed, premium quality practice plan for a youth soccer team.
+                Age Group: ${aiAge} (Recreational level)
+                Topic/Focus Area: ${aiFocus}
+                Match Format: ${aiFormat}
+                
+                Provide detailed instructions. Format your output strictly as a JSON object containing exactly these four keys:
+                "warmup": (A 10-15 minute active starter game/drill)
+                "drill1": (A 15-20 minute technical skill development exercise)
+                "drill2": (A 15-20 minute small sided game or scrimmage simulation)
+                "points": (3-4 bulleted coaching key points)
+                Do not include any markdown fences or other text outside the JSON object.`
+              }]
+            }]
+          })
+        });
+        const data = await response.json();
+        let rawText = data.candidates[0].content.parts[0].text;
+        // Clean up markdown block wraps if present
+        rawText = rawText.replace(/```json/g, "").replace(/```/g, "").trim();
+        const plan = JSON.parse(rawText);
+        setAiPlan(plan);
+        setAiGenerating(false);
+        return;
+      } catch (err) {
+        console.warn("Gemini generation failed, falling back to dynamic expert system", err);
+      }
+    }
+
+    // Advanced dynamic expert generator (Highly comprehensive offline fallback drills suite)
     setTimeout(() => {
-      // Dynamic arrays containing rich, varied coaching content
       const warmups = [
-        "Gate Dribbling: Set up multiple small gates around the grid. Players dribble through as many gates as possible in 1 minute. Focus on small touches, using different parts of the foot.",
-        "Dynamic Shuttle Weaves: Grid 15x15. Players jog in rows, sprinting forward 5 yards when clapped, changing direction on whistles, with dynamic side-steps and high-knees.",
-        "Tag Defense Shadowing: Attackers dribble within a tight circle trying to shield the ball while defenders try to stay within arm's reach without tackling. 45-second intervals.",
-        "Precision Box Warmup: 4 corners. Players pass diagonally, then sprint to the next corner. Stresses timing of runs, first-touch orientation, and communication."
+        "Gate Dribbling Challenge: Set up 15-20 mini gates of different colored cones around a 20x25 yard grid. Players have 60 seconds to dribble through as many gates as possible. Focus on small soft touches, rapid acceleration, looking up to spot open gates, and using both feet.",
+        "Precision Square Rondo: Set up a 10x10 yard square. Two players start inside as chasing defenders, four players pass on the boundaries. Must make 3 passes before switching play, encouraging open hips and fast two-touch ball movement.",
+        "Dynamic Shuttle Weaves: Set up rows of cones 2 yards apart. Players perform dynamic movements: jog forward, lateral shuffles, high knees, butt kicks, followed by a sudden burst sprint to receive a rolled pass from the coach.",
+        "Apex Ball Tag: Every player has a ball in a tight grid. Two players are designated 'it'. To tag someone, they must pass their ball to hit another player's ball. Promotes precision passing, rapid shielding, and defensive avoidance.",
+        "Chaos Traffic Lights: All players dribbling. Green cone = accelerate to high speed; yellow cone = perform inside cuts and step-overs; red cone = sole-stop the ball and pull back; blue cone = switch balls with a teammate. Promotes awareness and instant reaction.",
+        "Numbers Passing Warmup: In a large circle, players are numbered 1 to 10. They must pass in consecutive order (1 to 2, 2 to 3, etc.) while moving inside the circle. Demands high communication, movement off the ball, and visual scanning.",
+        "Dynamic Coerver Ball Mastery: In a 10x10 grid, players perform sole taps, side-to-side rolls, inside-outside cut combinations, and scissor fakes. Increases comfort with all surfaces of the foot.",
+        "Four-Corner Passing Square: Set up four corners. Players pass down the line and immediately run to follow their pass. Focus on firm, paced passing and receiving on the back foot."
       ];
 
       const drills1 = {
         dribbling: [
-          "Red Light, Green Light: Promotes head-up dribbling. Coach holds up cones (green = fast, red = stop, yellow = dragbacks). Players must react instantly while maintaining ball control.",
-          "Island Escape: Attackers dribble in a shared grid. Defenders try to kick their balls out. Stresses shielding, turning in tight spaces, and burst acceleration.",
-          "1v1 Dual Gates: Attackers face defender centrally. Attacker must drop shoulder to sell a feint and escape through one of two side gates."
+          "Red Light, Green Light Pro: Attackers must dribble across a 30-yard field. The coach stands at the opposite end and displays color cards. Green = fast dribble; Yellow = lateral dragbacks; Red = sole stop. If a player is spotted moving after red, they return 3 steps. Stresses head-up dribbling and instant control.",
+          "Island Escape & Shield: Divide the squad into 3 groups of islands. One group acts as sharks trying to steal balls. Dribblers must use body positioning to shield the ball, pivot on their heel, and accelerate into vacant spaces.",
+          "1v1 Dual Escape Gates: An attacker stands facing a defender 10 yards away. Attacker drops their shoulder to fake right, explodes left, and must pass through one of two mini cone gates before the defender can touch their jersey.",
+          "Cone Weave Relays: 4 lines of players. Players weave through a zigzag line of 8 cones using only their weak foot, turning at the end cone, and making a crisp pass back to the next teammate.",
+          "Coerver Move Mirroring: Two players face each other 3 yards apart. One is leader, one is follower. Leader performs dribble moves (stepovers, L-turns, chops) and follower must copy instantly in real-time.",
+          "Defensive Guard Grid: Attackers must dribble from one endline of a 20-yard grid to the other. Two defenders can only move laterally along marked horizontal lines to block them.",
+          "Minefield Run: Grid is filled with random cones, agility ladders, and tall poles. Attackers must weave through the minefield at speed without touching any obstacles or other players.",
+          "Speed Dribble Accel-Decel: Dribble at 100% speed for 10 yards, decelerate into a 360-degree turn around a cone, then instantly explode back to 100% speed for the next 10 yards."
         ],
         passing: [
-          "3v1 Keep Away (Rondo): Players in a grid pass to keep the ball from the defender in the center. Quick 1-2 touch passing, moving to support angles.",
-          "Give-and-Go Channels: Midfielders combine with wingers. Fullback passes to winger, runs forward to receive pass back down the line, crossing into target zones.",
-          "Switch Play Box: Teams of 3 pass across a divided grid. Must make 3 passes before playing a long driven pass to the opposite grid side."
+          "Rondo 4v1 Keepaway: In a 12x12 grid, players keep possession from one defender. Stresses body shape (open to the field), receiving with the back foot, calling for the ball early, and crisp first-touch accuracy.",
+          "Overlapping Flank Crosses: Midfielders pass to wingers who hold the ball, wait for fullbacks to overlap from behind, and release them down the sideline to deliver a driven cross into target zones.",
+          "Switch Play Channel: Set up two 15x15 grids separated by a 5-yard neutral zone. Players must make 3 passes in one grid, then hit a driven aerial or low pass to the opposite grid to transition the attack.",
+          "Give-and-Go Triangle Circuit: 3 players form a triangle. Pass, follow the pass, run to the next cone, receive, and repeat. Stresses movement immediately after passing.",
+          "Wall-Pass Combination Gates: Pairs pass to move through a series of mini gates. One player passes through the gate, the other runs around it to receive, emphasizing quick 1-2 timing.",
+          "Grid Crossing Challenge: 4v2 possession. Attackers score points by completing 5 passes, or by successfully making a pass that crosses the center line of the grid.",
+          "Back foot Receive Drill: Two lines facing each other 15 yards apart. Players must pass firm, receive with the inside of the back foot to open up, and pass back with their second touch.",
+          "Pressure Keepaway 3v3+1: Three attackers, three defenders, and one neutral player who always plays for the team with the ball. Stresses body shape under constant defensive pressure."
         ],
         shooting: [
-          "Turn & Shoot: Coach passes to player who has their back to goal. Player must turn with first touch and fire a shot into the corners.",
-          "Double Target Crosses: Two wingers run down flanks. Striker makes near-post run, midfielder makes far-post run. Wingers cross for quick first-touch finishes.",
-          "Rapid-Fire Rebounds: Attacker dribbles, shoots from 15 yards, then immediately spins to receive a second ball thrown by coach for a volley finish."
+          "Turn & Fire: Coach passes the ball to a striker who stands with their back to goal on the edge of the box. Striker must cushion the pass with a first touch, turn quickly, and fire a shot into the bottom corners of the net.",
+          "Crossing Overloads: Two wingers run down the flanks. Striker makes a near-post run, midfielder makes a late far-post run. Wingers deliver crosses for quick first-touch finishes under pressure.",
+          "Rapid Volley Rebounds: Attacker dribbles, shoots from 18 yards, then immediately spins to face the coach who throws a high bouncing ball. Attacker must adjust their body to half-volley or volley it into the goal.",
+          "1v1 Breakaways: Attacker starts on the halfway line. Defender starts 5 yards behind. Attacker sprints under pressure to beat the goalkeeper, focusing on composure and taking early shots.",
+          "Cutback Finishing: Attacker runs down the sideline, makes a sharp turn at the endline, and cuts a pass back to a charging midfielder at the top of the box for a one-touch shot.",
+          "Over-the-shoulder Volleys: Coach stands at the corner of the box and chips balls over the attacker's shoulder. Attacker must track the ball and strike it on the bounce.",
+          "Two-Touch Goal Busters: Players line up at the midfield circle. Dribble fast to a marker 18 yards out, perform a move, and must strike the ball before it crosses the 12-yard line.",
+          "Target Post Shooting: Set up mini goals or targets in the corners of the goal net. Players take turns shooting from different angles outside the penalty area, aiming for specific targets."
         ],
         defense: [
-          "1v1 Defending (Pressure & Cover): Defender passes to attacker, then sprints to close down space. Focus on speed of approach, deceleration, and side-on stance.",
-          "Staggered Cover Pairs: 2v2 defending. First defender pressures the ball. Second defender drops deeper at a 45-degree angle to cover passing lanes.",
-          "Goal Line Stand: Attackers have 10 seconds to score from a 1v1 starting 15 yards out. Defender focuses on body orientation and delaying the attacker."
+          "Pressure & Decelerate: Defender passes to attacker, then sprints to close down space. Focus on approach speed (sprint then slow down 2 steps away), low side-on stance, and forcing the attacker to their weak foot.",
+          "Staggered Cover Pairs: 2v2 defending. First defender pressures the player with the ball. Second defender drops deeper at a 45-degree angle to cover space and block diagonal passes.",
+          "Goal Line Stand: Attackers start 15 yards out and have 10 seconds to beat a defender and score. Defender focuses on delay, jockeying side-on, and waiting for a heavy touch to tackle.",
+          "Defensive Compactness: 4 defenders move in unison as the coach shifts the ball on the perimeter, teaching sliding left/right to maintain shape.",
+          "Jockeying Retreat: Attacker dribbles forward slowly. Defender must maintain a 1.5-yard gap, moving backwards in a side-on stance, changing stance as the attacker shifts directions.",
+          "Interception Channels: Attackers try to pass across a 10-yard channel. Defender stands in the channel and uses rapid lateral footwork to block and intercept passing lanes.",
+          "Defensive Recovery Sprint: Attacker gets a pass and a 2-yard advantage. Defender must sprint to catch up, get goalside of the ball, and decelerate to block the run.",
+          "Tackle or Delay Decision: Attacker starts in a tight box. Defender must judge whether to press high to win the ball (if the touch is heavy) or drop off to jockey (if the ball is controlled)."
         ],
         tactics: [
-          "Position Grid Shadowing: Players move in formation, maintaining spacing as coach walks to different parts of the field.",
-          "Overlapping Overload: 3v2 transition play. Fullback overlaps midfielder to create a crossing opportunity, stressing decision-making under pressure.",
-          "Building Out of Pressure: GK distributes to wide backs. Midfielder drops to form passing triangles to play past 2 chasing forward forecheckers."
+          "Shadow Play Grid: Team runs through game scenarios without opposition, maintaining 15-yard distance between positions. Stresses numbered role awareness (1-11) and defensive transition.",
+          "Building from the Back: GK rolls ball to wide center backs. Attacking team must link passes through defending midfielder to pass past the halfway line, avoiding opponent's high press.",
+          "Overload Counter Attacks: 3v2 transition. Two defenders try to clear the ball to coach, while 3 attackers try to win possession and finish in under 12 seconds.",
+          "Switching Attack Channels: Scrimmage where a team can only score if the ball has visited both left and right flanks before entering the penalty box.",
+          "Midfield Pivot Transitions: Focuses on defensive midfielder receiving the ball from centerbacks, turning, and immediately spraying passes to the overlapping wingers.",
+          "Defensive Line Offside Trap: Back 4 practice stepping up in unison the moment the opponent midfielder looks down to strike a long ball, trapping the striker offside.",
+          "Set Piece Corner Defense: Setting up zonal defending markers for corners. 3 players cover the six-yard box, 2 cover the near post, and others mark attackers man-to-man.",
+          "High Pressing Wave: 4 attackers try to win the ball high up the field when the opponent GK plays it out. Focus on cutting off passing lanes to midfielders."
         ],
         fitness: [
-          "SAQ Circuit (Speed, Agility, Quickness): Speed ladder, cone weave, hurdle hops, followed by a short sprint to receive a pass.",
-          "Dribble Shuttle Relays: Teams sprint-dribble to 5, 10, and 15-yard cones, performing turnbacks at each, passing back to teammate.",
-          "Endurance Keep-Away: High-intensity 4v4 in small grid with no rest. Stresses soccer endurance and passing under maximum fatigue."
+          "Speed Agility Quickness (SAQ) Loop: Ladder footwork (two feet in, out), cone weaves, hurdle hops, followed by an immediate 15-yard sprint to receive a pass.",
+          "Dribble Shuttle Relays: Teams sprint-dribble to 5, 10, and 15-yard cones, performing dragbacks at each, and passing back to their teammate.",
+          "Interval Sprint Scrimmage: Standard scrimmage where on whistles, all players must sprint to touch their own endline before returning to defend/attack.",
+          "Agility Suicide Runs: Sprint to 5 yards, touch line, sprint back; sprint to 10 yards, touch line, sprint back; repeat. Stresses deceleration and low center of gravity.",
+          "Continuous 3v3 Match play: Small 3v3 games on mini fields with no goalkeepers. Extremely high cardiac output and rapid transitions.",
+          "Recovery Interval Runs: Jog for 45 seconds, sprint for 15 seconds, repeat 10 times. Mimics the natural running profile of a soccer match.",
+          "Lateral Hop Sprints: Jump side-to-side over a hurdle 5 times, then immediately burst into a 10-yard acceleration sprint.",
+          "Active Recovery Ball Juggling: Juggle the ball in pairs. If the ball drops, both must do 3 squats before resuming. Combines fatigue recovery with technical touches."
         ]
       };
 
       const drills2 = {
         dribbling: [
           "1v1 to Endlines: Small-sided 10x15 yard grid. Attackers try to dribble past a defender to cross the endline under control. Stresses agility and body feints.",
-          "4-Corner Dribble Escape: 4 teams in corners. On whistle, center is filled with target cones. Players sprint to steal cones and dribble back under control."
+          "4-Corner Dribble Escape: 4 teams in corners. On whistle, center is filled with target cones. Players sprint to steal cones and dribble them back under control.",
+          "King of the Ring: All players dribble inside the center circle. While keeping their ball close, they try to kick other players' balls out of the circle.",
+          "Snake Run: A line of 5 defenders stand 3 yards apart. Attacker must weave in and out of the line, dribbling past each defender without losing control.",
+          "Shielding Showdown: Two players inside a 5x5 yard grid. One player protects the ball for 30 seconds while the other tries to steal it.",
+          "Mirror Dribble Battle: Two lines of players. Attacker dribbles along a line changing speed; defender must stay parallel on a line 2 yards away.",
+          "Dribble Tag Chaos: 3 players are tagged as catchers without a ball. All others must dribble around the grid avoiding catchers.",
+          "Target Knockout: Dribblers try to hit stationary training balls set up on top of tall cones by passing their ball accurately while on the move."
         ],
         passing: [
           "Through Gate Passing Game: Set up random gates. Players earn points by successfully passing through a gate to a teammate running on the other side.",
-          "Target Man Rondo: 4v4 with 2 neutral target players on endlines. Must pass through midfield grid to find targets for points."
+          "Target Man Rondo: 4v4 with 2 neutral target players on endlines. Must pass through midfield grid to find targets for points.",
+          "Grid-to-Grid Switching: 6v3 possession. The 6 attackers must complete 4 passes in one half before switching the ball to the other half.",
+          "Precision Gate Game: Pairs score points by passing the ball through 5-foot gates. Defender tries to intercept passes.",
+          "Give-and-Go Shooting: Midfielder passes to striker, striker holds the ball and rolls it back into the path of the midfielder for a shot.",
+          "Continuous 3-Man Weave: 3 lines. Player in middle passes to wing, runs behind them. Wing passes to other wing, runs behind. Move down the field.",
+          "Driven Switch Play: Players stand 20 yards apart and practice striking low, driven passes through a narrow central gate.",
+          "Target Bucket Challenge: Teams try to loft long passes over a distance into a 5-yard target zone or bin to build touch."
         ],
         shooting: [
           "2v1 Crossing & Finishing: Two attackers run down the wing, cross to a target striker while one defender tries to clear.",
-          "Scrimmage with Double-Point Targets: Small scrimmage. Goals scored from first-touch finishes or outside the box count double."
+          "Scrimmage with Double-Point Targets: Small scrimmage. Goals scored from first-touch finishes or outside the box count double.",
+          "Attacking Wave Finishes: 3v2 waves. Three players attack the goal. Once they shoot or lose the ball, two of them become defenders as a new trio attacks.",
+          "Angle Finishes: Players run diagonally to meet a pass rolled in from the corner and must finish with a first-touch shot across the goalkeeper.",
+          "Penalty Box Scramble: Coach throws a ball high into a crowded box. Attackers try to react, control, and shoot before defenders clear.",
+          "Volley Finishing Grid: Strikers stand in the D, coach stands next to goal. Coach serves bouncing balls for immediate half-volley finishes.",
+          "Two-Touch Finishes: Attacker receives a pass, must take a positive first touch around a defender cone, and shoot with the second touch.",
+          "Rapid Fire Finishing: Attacker takes 3 shots in 10 seconds: first from a pass, second from a bounce, third from a loose ball."
         ],
         defense: [
           "Delay the Attack: Defender blocks central channel, forcing attacker wide and waiting for recovery run support.",
-          "4v4 Defending Zones: Scrimmage where defenders must stay in their assigned defensive zones, passing attackers off to teammates."
+          "4v4 Defending Zones: Scrimmage where defenders must stay in their assigned defensive zones, passing attackers off to teammates.",
+          "Recovery Run Race: Attacker gets a 3-yard head start down the wing. Defender must run at an angle to intercept them before they reach the box.",
+          "Defending the Cross: Crosses are delivered from both wings. Defenders focus on body orientation, tracking runs, and heading the ball clear.",
+          "Compact 3v3 Defending: Small-sided scrimmage. Defenders score points by winning the ball and dribbling it through mini gates.",
+          "Defensive Triangle: 3 defenders against 4 attackers. Defenders must slide to cover the open space, communicating who presses the ball.",
+          "Goalside Blocking: Defender must stay between the attacker and the goal at all times, blocking any shooting attempts.",
+          "Recovery Interceptions: 3v2 counter attack. Defenders must sprint back to recover, intercept passing lanes, and clear the ball."
         ],
         tactics: [
           "Winger Overlaps: Tactical scenario focusing on fullback overlapping the winger to create crossing opportunities.",
-          "Half-Field Match Play: 7v7 scrimmage focusing on building attacks starting from wide channels and switching play."
+          "Half-Field Match Play: 7v7 scrimmage focusing on building attacks starting from wide channels and switching play.",
+          "Stretched Field Scrimmage: Scrimmage with two wide channels. Only wingers can play in these channels, ensuring the team stays spread out.",
+          "Channel Passing Scrimmage: Field divided into three vertical channels. Attackers must complete a pass in each channel before shooting.",
+          "Counter Attack Waves: 4v2 waves. Attacking team tries to score. If defenders win it, they quickly transition to score on mini goals.",
+          "Building Out of Pressure: GK distributes to defenders. Midfielder drops to form passing triangles to play past 2 forecheckers.",
+          "Fullback Overlaps: Fullback runs around winger to cross. Midfielders shift to cover the defensive space left behind.",
+          "Defensive Compactness: Scrimmage where defenders must defend a narrow goal, forcing the attack wide."
         ],
         fitness: [
           "Shuttle Run Relays: Competitiveness shuttle runs where teams race to retrieve balls and dribble them back.",
-          "Interval Sprint Scrimmage: Scrimmage where on whistles, all players must sprint to touch their own endline before returning to active play."
+          "Interval Sprint Scrimmage: Scrimmage where on whistles, all players must sprint to touch their own endline before returning to active play.",
+          "Cardio Keep-Away: 3v3 possession game in a very large grid. Players must cover massive space to support passes, building lung capacity.",
+          "Agility Ladder Sprints: Agility ladder footwork followed by a 10-yard sprint and a 1-touch volley finish.",
+          "Continuous Transition 4v4: 4v4 scrimmage where the team that scores stays on, and a new team of 4 runs on to attack.",
+          "Cone Shuttle Touches: Shuttle run to 3 different cones, performing 10 toe taps at each cone before returning.",
+          "High Intensity Rondo: 3v1 rondo. The player in the middle changes every 30 seconds, maintaining maximum intensity.",
+          "Endurance Dribbling Loop: Continuous dribbling circuit around the field, performing cuts and turns at markers."
         ]
       };
 
       const points = {
         dribbling: [
           "Keep the ball close (shielding). Keep eyes up to see defenders/space. Drop shoulder to sell feints.",
-          "Soft touches with laces when running, use inside/outside of foot for quick cuts. Accelerate after turn."
+          "Soft touches with laces when running, use inside/outside of foot for quick cuts. Accelerate after turn.",
+          "Change of speed is key. Slow the defender down, then explode past them with a big first touch.",
+          "Scan the field. Know where the space is before you receive the ball, and drive into it."
         ],
         passing: [
           "Locked ankle, toe pointed out when passing. Positive first touch out of feet. Communicate early.",
-          "Open body stance to receive. Pass to teammate's dominant foot. Keep passes crisp and on the floor."
+          "Open body stance to receive. Pass to teammate's dominant foot. Keep passes crisp and on the floor.",
+          "Always support the ball. Create passing triangles by moving into open spaces when your teammate is pressured.",
+          "Accuracy over power. Focus on a clean strike through the center of the ball."
         ],
         shooting: [
           "Plant non-kicking foot next to ball. Keep chest and knee over the ball. Strike with laces, follow through.",
-          "Look up to spot the GK positioning, then pick a corner. Keep shots low to make saves harder."
+          "Look up to spot the GK positioning, then pick a corner. Keep shots low to make saves harder.",
+          "Be hungry for rebounds. Follow every shot into the box, expecting the goalie to spill the ball.",
+          "Accuracy over power. Pick your spot and guide the ball into the corners."
         ],
         defense: [
           "Slightly bent knees, low center of gravity. Stand side-on, do not dive in. Wait for attacker to make a heavy touch.",
-          "Apply pressure quickly but slow down 2 steps before the ball. Angle your body to force them to their weak foot."
+          "Apply pressure quickly but slow down 2 steps before the ball. Angle your body to force them to their weak foot.",
+          "Patience over aggression. Do not tackle unless you are 100% sure you can win the ball. Jockey to delay.",
+          "Communicate. Talk to your fellow defenders, directing who should press and who covers."
         ],
         tactics: [
           "Maintain distance and team shape. Know your numbered role (1-11). Communicate transitions.",
-          "Create passing triangles. Wide players must stretch the field. Midfielders must act as the pivot option."
+          "Create passing triangles. Wide players must stretch the field. Midfielders must act as the pivot option.",
+          "Transition quickly. The moment we win the ball, open up and run wide. The moment we lose it, pack the center.",
+          "Support the ball. Always offer at least two passing options (left, right, or deep) to the player in possession."
         ],
         fitness: [
           "High intensity effort. Correct posture in deceleration. Pump arms during sprints.",
-          "Stay light on your feet during agility ladder drills. Breathe deeply and focus on rapid acceleration bursts."
+          "Stay light on your feet during agility ladder drills. Breathe deeply and focus on rapid acceleration bursts.",
+          "Maintain work rate. Football fitness is about repeating short sprints with minimal recovery time.",
+          "Focus on technique even when tired. Quality of pass and touch must remain high under fatigue."
         ]
       };
 
-      // Randomly select items to compile a completely fresh practice plan!
       const randomWarmup = warmups[Math.floor(Math.random() * warmups.length)];
       const focusDrills1 = drills1[aiFocus] || drills1.dribbling;
       const randomDrill1 = focusDrills1[Math.floor(Math.random() * focusDrills1.length)];
-      
       const focusDrills2 = drills2[aiFocus] || drills2.dribbling;
       const randomDrill2 = focusDrills2[Math.floor(Math.random() * focusDrills2.length)];
-      
       const focusPoints = points[aiFocus] || points.dribbling;
       const randomPoints = focusPoints[Math.floor(Math.random() * focusPoints.length)];
 
@@ -780,18 +907,42 @@ export default function App() {
         points: randomPoints
       });
       setAiGenerating(false);
-    }, 500);
+    }, 400);
   };
 
-  // --- AI COACHING Q&A BOT ASSISTANT ---
-  const handleAskAICoach = (e) => {
+  // --- AI COACHING Q&A BOT ASSISTANT (Live Gemini + Expert Fallback) ---
+  const handleAskAICoach = async (e) => {
     e.preventDefault();
     if (!aiQuestion.trim()) return;
 
     setAiThinking(true);
     setAiAnswer('');
 
-    // Precompiled intelligent rule & tactics resolver
+    // Attempt Live Gemini Q&A if API key is provided
+    if (geminiApiKey) {
+      try {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{
+                text: `You are an expert youth soccer coaching advisor. Answer the following question in a concise, highly practical manner for a recreational coach. Use bullet points and bold headers: "${aiQuestion}"`
+              }]
+            }]
+          })
+        });
+        const data = await response.json();
+        const text = data.candidates[0].content.parts[0].text;
+        setAiAnswer(text);
+        setAiThinking(false);
+        return;
+      } catch (err) {
+        console.warn("Gemini Q&A failed, falling back to local expert system", err);
+      }
+    }
+
+    // Expert local resolver fallback
     setTimeout(() => {
       const q = aiQuestion.toLowerCase();
       let ans = "";
@@ -826,6 +977,18 @@ export default function App() {
     const id = draggedElementId;
     if (!id) return;
     
+    // Check if dragging a player ID from the bench to assign to a position
+    const playerId = e.dataTransfer.getData("playerId");
+    if (playerId) {
+      // Find which position circle they dropped onto
+      const targetSlot = e.target.closest(".tactical-player");
+      if (targetSlot) {
+        const slotIdx = parseInt(targetSlot.id);
+        assignPlayerToSlot(playerId, slotIdx);
+      }
+      return;
+    }
+
     const field = document.getElementById("tacticalSoccerField");
     const rect = field.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 100;
@@ -863,6 +1026,34 @@ export default function App() {
     setCustomPositions({});
     localStorage.removeItem(`teamfc_positions_${currentTeamId}`);
     setBallPosition({ left: 50, top: 50 });
+    
+    // Clear lineup assignments as well
+    setPositionAssignments({});
+    localStorage.removeItem(`teamfc_assignments_${currentTeamId}`);
+  };
+
+  // --- Assign Player to Field Slot (Up to 20 players roster assignment support) ---
+  const assignPlayerToSlot = (playerId, slotIdx) => {
+    const nextAss = { ...positionAssignments };
+    
+    // If player was already assigned to another slot, clear that slot first (prevents duplicates)
+    Object.keys(nextAss).forEach(key => {
+      if (nextAss[key] === playerId) {
+        delete nextAss[key];
+      }
+    });
+
+    nextAss[slotIdx] = playerId;
+    setPositionAssignments(nextAss);
+    localStorage.setItem(`teamfc_assignments_${currentTeamId}`, JSON.stringify(nextAss));
+    setActiveSlotSelector(null);
+  };
+
+  const unassignPlayerFromSlot = (slotIdx) => {
+    const nextAss = { ...positionAssignments };
+    delete nextAss[slotIdx];
+    setPositionAssignments(nextAss);
+    localStorage.setItem(`teamfc_assignments_${currentTeamId}`, JSON.stringify(nextAss));
   };
 
   // --- Scoreboard calculations ---
@@ -905,6 +1096,10 @@ export default function App() {
   }
 
   const activeTeamBadge = teams.find(t => t.id === currentTeamId)?.badge || '⚽';
+  
+  // Bench players are any roster players NOT assigned to a field slot
+  const assignedPlayerIds = Object.values(positionAssignments);
+  const benchPlayers = roster.filter(p => !assignedPlayerIds.includes(p.id));
 
   return (
     <div className="min-h-screen bg-[#0a0f1d] text-slate-100 flex flex-col">
@@ -1116,14 +1311,14 @@ export default function App() {
             <div className="lg:col-span-8 glass-panel p-6">
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
                 <div>
-                  <h2 class="text-2xl font-bold text-slate-100 font-heading">Tactical Board</h2>
-                  <p className="text-sm text-slate-400">Drag players (or ball ⚽) to show positions & bench.</p>
+                  <h2 className="text-2xl font-bold text-slate-100 font-heading">Tactical Board</h2>
+                  <p className="text-sm text-slate-400">Drag roster players onto the board slots. Drag circles to change positioning.</p>
                 </div>
                 <div className="flex items-center gap-3">
                   <button onClick={handleResetBoard} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-lg border border-white/5">
                     Reset Board
                   </button>
-                  <select value={tacticalFormat} onChange={(e) => setTacticalFormat(e.target.value)} className="bg-slate-900 border border-white/10 px-3 py-1.5 rounded-lg text-sm text-white focus:outline-none cursor-pointer">
+                  <select value={tacticalFormat} onChange={(e) => { setTacticalFormat(e.target.value); handleResetBoard(); }} className="bg-slate-900 border border-white/10 px-3 py-1.5 rounded-lg text-sm text-white focus:outline-none cursor-pointer">
                     <option value="6v6">6v6 Formations</option>
                     <option value="7v7">7v7 Formations</option>
                     <option value="8v8">8v8 Formations</option>
@@ -1167,9 +1362,11 @@ export default function App() {
                   ⚽
                 </div>
 
-                {/* Active Players */}
+                {/* Active Players - Renders based on selection */}
                 {FORMATIONS[tacticalFormat].map((pos, idx) => {
-                  const assigned = roster[idx];
+                  const assignedPlayerId = positionAssignments[idx];
+                  const assigned = roster.find(p => p.id === assignedPlayerId);
+                  
                   const nameLabel = assigned ? assigned.name : `Empty ${pos.label}`;
                   const custom = customPositions[idx];
                   const left = custom ? custom.left : pos.left;
@@ -1182,6 +1379,8 @@ export default function App() {
                       draggable
                       onDragStart={(e) => handleDragStart(e, String(idx))}
                       onTouchMove={(e) => handleTouchMove(e, String(idx))}
+                      onDragOver={(e) => e.preventDefault()}
+                      onClick={() => setActiveSlotSelector(idx)}
                       style={{
                         position: 'absolute',
                         left: `${left}%`,
@@ -1189,29 +1388,76 @@ export default function App() {
                         transform: 'translate(-50%, -50%)',
                         touchAction: 'none'
                       }}
-                      className="tactical-player z-20"
+                      className={`tactical-player z-20 cursor-pointer transition-all ${assigned ? 'border-emerald-400 bg-emerald-500/20' : 'border-dashed border-white/20 bg-black/40'}`}
                     >
                       <span>{assigned ? assigned.jerseyNumber : pos.label}</span>
-                      <div className="tactical-player-label">{nameLabel}</div>
+                      <div className="tactical-player-label flex items-center gap-1">
+                        <span>{nameLabel}</span>
+                        {assigned && (
+                          <button 
+                            onClick={(e) => { 
+                              e.stopPropagation(); 
+                              unassignPlayerFromSlot(idx); 
+                            }} 
+                            className="text-[9px] bg-red-600/80 hover:bg-red-700 text-white rounded-full w-3.5 h-3.5 flex items-center justify-center font-bold no-print"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Manual Quick selector popup (critical for mobile/tablet where drag/drop fails) */}
+                      {activeSlotSelector === idx && (
+                        <div className="absolute top-12 left-1/2 -translate-x-1/2 bg-slate-950/95 border border-white/25 p-2 rounded-xl z-50 w-44 shadow-2xl space-y-1 text-xs">
+                          <div className="flex justify-between items-center border-b border-white/10 pb-1 mb-1 text-[10px] text-slate-400">
+                            <span>Select Player</span>
+                            <button onClick={(e) => { e.stopPropagation(); setActiveSlotSelector(null); }} className="text-white">✕</button>
+                          </div>
+                          <div className="max-h-36 overflow-y-auto space-y-0.5">
+                            {benchPlayers.length === 0 ? (
+                              <div className="text-[10px] italic text-slate-500 text-center py-2">No bench players</div>
+                            ) : (
+                              benchPlayers.map(bp => (
+                                <button
+                                  key={bp.id}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    assignPlayerToSlot(bp.id, idx);
+                                  }}
+                                  className="w-full text-left px-2 py-1 hover:bg-white/10 rounded text-slate-200"
+                                >
+                                  #{bp.jerseyNumber} {bp.name}
+                                </button>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
               </div>
 
-              {/* Bench */}
+              {/* Bench (Coaches can drag/drop any of the 20 players on roster from here to the board slots) */}
               <div className="mt-6 bg-slate-900/50 p-4 rounded-xl border border-white/5">
-                <h4 className="text-sm font-bold text-slate-300 mb-2">Reserve / Bench Players</h4>
+                <div className="flex justify-between items-center mb-2">
+                  <h4 className="text-sm font-bold text-slate-300">Reserve / Bench Players ({benchPlayers.length})</h4>
+                  <span className="text-[10px] text-slate-400">Drag card onto a field circle above or click a circle to assign</span>
+                </div>
                 <div className="flex flex-wrap gap-3 min-h-[60px] p-2 bg-slate-950/40 border border-dashed border-white/10 rounded-lg items-center">
-                  {roster.slice(FORMATIONS[tacticalFormat].length).length === 0 ? (
-                    <p className="text-xs text-slate-500 italic w-full text-center py-2">No players on the bench. Add more to your roster.</p>
+                  {benchPlayers.length === 0 ? (
+                    <p className="text-xs text-slate-500 italic w-full text-center py-2">No players on the bench. Add players to roster or remove some from field.</p>
                   ) : (
-                    roster.slice(FORMATIONS[tacticalFormat].length).map(p => (
+                    benchPlayers.map(p => (
                       <div
                         key={p.id}
                         id={`bench-${p.id}`}
                         draggable
-                        onDragStart={(e) => handleDragStart(e, `bench-${p.id}`)}
-                        className="tactical-player relative"
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData("playerId", p.id);
+                          setDraggedElementId(`bench-${p.id}`);
+                        }}
+                        className="tactical-player relative cursor-grab bg-slate-900 border border-indigo-500/20 active:cursor-grabbing hover:border-indigo-400"
                       >
                         <span>{p.jerseyNumber}</span>
                         <div className="tactical-player-label">{p.name}</div>
@@ -1461,7 +1707,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* AI COACHING QUESTION BOX (General AI Q&A Chatbot integration) */}
+            {/* AI COACHING QUESTION BOX */}
             <div className="glass-panel p-6">
               <h3 className="text-lg font-bold text-slate-200 mb-2 flex items-center gap-2">
                 <span>🤖</span> Ask the Team FC AI Coach
@@ -1681,7 +1927,7 @@ export default function App() {
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="glass-panel max-w-lg w-full p-6 space-y-4">
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <h3 className="text-lg font-bold text-white">Manage Team Roster</h3>
+              <h3 className="text-lg font-bold text-white">Manage Team Roster (Max 20 Players)</h3>
               <button onClick={() => setShowRosterModal(false)} className="text-slate-400 hover:text-white">✕</button>
             </div>
             <div className="flex gap-2">
@@ -1780,7 +2026,7 @@ export default function App() {
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="glass-panel max-w-md w-full p-6 space-y-4">
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <h3 className="text-lg font-bold text-white">Database Settings</h3>
+              <h3 className="text-lg font-bold text-white">System Settings</h3>
               <button onClick={() => setShowConfigModal(false)} className="text-slate-400 hover:text-white">✕</button>
             </div>
             <div className="space-y-3 text-xs text-slate-400">
@@ -1796,8 +2042,15 @@ export default function App() {
                 <label className="block text-[10px] text-slate-300 font-bold uppercase">Supabase Anon Key</label>
                 <input type="password" value={dbAnonKey} onChange={(e) => setDbAnonKey(e.target.value)} placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." className="w-full bg-slate-900 border border-white/10 px-3 py-2 rounded-lg text-sm text-white focus:outline-none" />
               </div>
+              
+              <div className="space-y-2 border-t border-white/10 pt-3">
+                <label className="block text-[10px] text-slate-300 font-bold uppercase">Google Gemini API Key (Optional)</label>
+                <input type="password" value={geminiApiKey} onChange={(e) => setGeminiApiKey(e.target.value)} placeholder="AI Key for infinite custom drills..." className="w-full bg-slate-900 border border-white/10 px-3 py-2 rounded-lg text-sm text-white focus:outline-none" />
+                <p className="text-[9px] text-slate-500">Insert your Gemini Key to replace mock generation with live, real-time AI soccer drill planning & advisor advice!</p>
+              </div>
+
               <button onClick={() => {
-                localStorage.setItem("teamfc_supabase_config", JSON.stringify({ url: dbUrl, anonKey: dbAnonKey }));
+                localStorage.setItem("teamfc_supabase_config", JSON.stringify({ url: dbUrl, anonKey: dbAnonKey, geminiApiKey }));
                 setShowConfigModal(false);
                 loadTeams();
               }} className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold transition-all mt-2">
