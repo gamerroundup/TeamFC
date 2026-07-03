@@ -351,13 +351,6 @@ export default function App() {
     }));
   };
 
-  const loadTeamDetails = async (teamId) => {
-    const currentTeam = teams.find(t => t.id === teamId);
-    if (currentTeam) {
-      setTeamNameInput(currentTeam.name);
-      setTeamBadgeInput(currentTeam.badge || '⚽');
-    }
-
   const loadLocalTeamDetailsFallback = (teamId) => {
     let fallbackRoster = JSON.parse(localStorage.getItem(`teamfc_roster_${teamId}`)) || [];
     if (fallbackRoster.length === 0) {
